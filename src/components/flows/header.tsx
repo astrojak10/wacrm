@@ -23,20 +23,30 @@
  */
 
 import { useRouter } from "next/navigation";
+import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import {
   ArrowLeft,
   CircleDot,
+  Download,
   History,
   Loader2,
   PauseCircle,
   PlayCircle,
   Save,
   Trash2,
+  Upload,
   Workflow,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  MAX_FLOW_FILE_BYTES,
+  parseFlowFile,
+  serializeFlowFile,
+  type FlowFileData,
+} from "@/lib/flows/file";
 import { cn } from "@/lib/utils";
 import {
   useFlowEditor,
@@ -46,6 +56,8 @@ import {
 export function EditorHeader() {
   const router = useRouter();
   const t = useTranslations("Flows.header");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
   const {
     flow,
     state,
@@ -58,6 +70,65 @@ export function EditorHeader() {
     setStatus,
     deleteFlow,
   } = useFlowEditor();
+
+  const exportToFile = () => {
+    const portableFlow: FlowFileData = {
+      name: state.name,
+      description: state.description,
+      trigger_type: state.trigger_type,
+      trigger_config: state.trigger_config,
+      entry_node_id: state.entry_node_id,
+      fallback_policy: state.fallback_policy,
+      nodes: state.nodes.map((node) => ({
+        ...node,
+        position_x: node.position_x ?? 0,
+        position_y: node.position_y ?? 0,
+      })),
+    };
+    const blob = new Blob([serializeFlowFile(portableFlow)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeName =
+      state.name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "flow";
+    link.href = url;
+    link.download = `${safeName}.wacrm-flow.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
+  const importFromFile = async (file: File) => {
+    setImporting(true);
+    try {
+      if (file.size > MAX_FLOW_FILE_BYTES) {
+        throw new Error(t("importTooLarge"));
+      }
+      const imported = parseFlowFile(await file.text());
+      if (!window.confirm(t("importConfirm"))) return;
+      setState((current) => ({
+        ...current,
+        name: imported.name,
+        description: imported.description,
+        trigger_type: imported.trigger_type,
+        trigger_config: imported.trigger_config,
+        entry_node_id: imported.entry_node_id,
+        fallback_policy: imported.fallback_policy,
+        nodes: imported.nodes,
+      }));
+      toast.success(t("importStaged"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("importFailed"));
+    } finally {
+      setImporting(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-1.5 px-6 pt-5">
@@ -95,7 +166,7 @@ export function EditorHeader() {
           </span>
         )}
 
-        {/* ---- right: runs · delete · activate · save ---- */}
+        {/* ---- right: runs · file actions · delete · activate · save ---- */}
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           <Button
             variant="ghost"
@@ -108,6 +179,35 @@ export function EditorHeader() {
               {flow.execution_count}
             </span>
           </Button>
+          <Button variant="ghost" size="sm" onClick={exportToFile}>
+            <Download className="h-3.5 w-3.5" />
+            {t("exportPC")}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={saving || importing}
+          >
+            {importing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Upload className="h-3.5 w-3.5" />
+            )}
+            {t("importPC")}
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,.wacrm-flow.json,application/json"
+            aria-label={t("importPC")}
+            className="hidden"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (file) void importFromFile(file);
+            }}
+          />
           <Button
             variant="ghost"
             size="sm"
