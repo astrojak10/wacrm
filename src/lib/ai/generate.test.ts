@@ -192,3 +192,157 @@ describe('generateReply — Anthropic', () => {
     expect(body.messages).toHaveLength(1)
   })
 })
+
+describe('generateReply — Gemini', () => {
+  it('calls the generateContent endpoint with x-goog-api-key header and parses candidates and usage', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        candidates: [
+          {
+            content: {
+              parts: [{ text: 'Hello from Gemini!' }],
+              role: 'model',
+            },
+          },
+        ],
+        usageMetadata: {
+          promptTokenCount: 25,
+          candidatesTokenCount: 10,
+          totalTokenCount: 35,
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({ provider: 'gemini', apiKey: 'AIzaSyTestKey', model: 'gemini-2.5-flash' }),
+      systemPrompt: 'System instructions',
+      messages: [{ role: 'user', content: 'Hello' }],
+    })
+
+    expect(res).toEqual({
+      text: 'Hello from Gemini!',
+      handoff: false,
+      usage: { promptTokens: 25, completionTokens: 10, totalTokens: 35 },
+    })
+
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toContain('generativelanguage.googleapis.com')
+    expect(url).toContain('gemini-2.5-flash:generateContent')
+    expect(opts.headers['x-goog-api-key']).toBe('AIzaSyTestKey')
+
+    const body = JSON.parse(opts.body)
+    expect(body.systemInstruction.parts[0].text).toBe('System instructions')
+    expect(body.contents).toEqual([
+      { role: 'user', parts: [{ text: 'Hello' }] },
+    ])
+  })
+
+  it('detects handoff in the model output', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        okResponse({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: '[[HANDOFF]]' }],
+                role: 'model',
+              },
+            },
+          ],
+        }),
+      ),
+    )
+    const res = await generateReply({
+      config: config({ provider: 'gemini' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'I want to talk to an agent' }],
+    })
+    expect(res.handoff).toBe(true)
+    expect(res.text).toBe('')
+  })
+
+  it('drops leading assistant turns and merges consecutive turns', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        candidates: [
+          {
+            content: {
+              parts: [{ text: 'response' }],
+              role: 'model',
+            },
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateReply({
+      config: config({ provider: 'gemini' }),
+      systemPrompt: '',
+      messages: [
+        { role: 'assistant', content: 'Welcome' },
+        { role: 'user', content: 'Question 1' },
+        { role: 'user', content: 'Question 2' },
+        { role: 'assistant', content: 'Answer 1' },
+      ],
+    })
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.contents).toEqual([
+      { role: 'user', parts: [{ text: 'Question 1\n\nQuestion 2' }] },
+      { role: 'model', parts: [{ text: 'Answer 1' }] },
+    ])
+    // System instruction omitted when empty
+    expect(body.systemInstruction).toBeUndefined()
+  })
+
+  it('maps a 400 invalid API key error to invalid_key AiError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        errResponse(400, {
+          error: {
+            code: 400,
+            message: 'API key not valid. Please pass a valid API key.',
+            status: 'INVALID_ARGUMENT',
+          },
+        }),
+      ),
+    )
+
+    await expect(
+      generateReply({
+        config: config({ provider: 'gemini' }),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_key', status: 401 })
+  })
+
+  it('throws on an empty completion', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        okResponse({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: '   ' }],
+              },
+            },
+          ],
+        }),
+      ),
+    )
+
+    await expect(
+      generateReply({
+        config: config({ provider: 'gemini' }),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    ).rejects.toBeInstanceOf(AiError)
+  })
+})
