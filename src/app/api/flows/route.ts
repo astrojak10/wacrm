@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
-import { getFlowTemplate } from '@/lib/flows/templates'
+import { buildEmptyFlowGraph, getFlowTemplate } from '@/lib/flows/templates'
 
 /**
  * GET /api/flows — list the caller's flows.
@@ -166,6 +166,7 @@ export async function POST(request: Request) {
       status: 'draft',
       trigger_type,
       trigger_config: body.trigger_config ?? {},
+      entry_node_id: 'start',
     })
     .select()
     .single()
@@ -175,5 +176,23 @@ export async function POST(request: Request) {
       { status: 500 },
     )
   }
+
+  const seed = buildEmptyFlowGraph()
+  const { error: seedErr } = await admin.from('flow_nodes').insert(
+    seed.nodes.map((node) => ({
+      flow_id: data.id,
+      node_key: node.node_key,
+      node_type: node.node_type,
+      config: node.config,
+      position_x: node.position_x,
+      position_y: node.position_y,
+    })),
+  )
+
+  if (seedErr) {
+    await admin.from('flows').delete().eq('id', data.id)
+    return NextResponse.json({ error: seedErr.message }, { status: 500 })
+  }
+
   return NextResponse.json({ flow: data }, { status: 201 })
 }

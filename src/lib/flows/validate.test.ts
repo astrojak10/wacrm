@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { validateFlowForActivation, reachableFromEntry } from "./validate";
+import { buildEmptyFlowGraph } from "./templates";
 
 const validFlow = {
   name: "Welcome",
@@ -27,6 +28,21 @@ const validNodes = [
 describe("validateFlowForActivation — happy path", () => {
   it("produces no issues on a well-formed flow", () => {
     expect(validateFlowForActivation(validFlow, validNodes)).toEqual([]);
+  });
+
+  it("creates a valid start node for a brand-new flow draft", () => {
+    expect(buildEmptyFlowGraph()).toEqual({
+      entry_node_id: "start",
+      nodes: [
+        {
+          node_key: "start",
+          node_type: "start",
+          config: { next_node_key: "" },
+          position_x: 0,
+          position_y: 0,
+        },
+      ],
+    });
   });
 });
 

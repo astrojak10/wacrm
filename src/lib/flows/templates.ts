@@ -304,3 +304,27 @@ export function getFlowTemplate(slug: string): FlowTemplate | null {
 export function listFlowTemplates(): FlowTemplate[] {
   return Object.values(TEMPLATES);
 }
+
+export function buildEmptyFlowGraph(): {
+  entry_node_id: string;
+  nodes: Array<{
+    node_key: string;
+    node_type: "start";
+    config: { next_node_key: string };
+    position_x: number;
+    position_y: number;
+  }>;
+} {
+  return {
+    entry_node_id: "start",
+    nodes: [
+      {
+        node_key: "start",
+        node_type: "start",
+        config: { next_node_key: "" },
+        position_x: 0,
+        position_y: 0,
+      },
+    ],
+  };
+}

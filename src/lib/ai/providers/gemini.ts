@@ -112,3 +112,4 @@ export async function generateGemini(args: ProviderArgs): Promise<ProviderResult
 
   return { text, usage }
 }
+

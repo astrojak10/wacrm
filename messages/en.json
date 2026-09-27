@@ -1158,6 +1158,14 @@
       "form": {
         "advancesTo": "Advances to",
         "textToCustomer": "Text sent to the customer",
+        "paymentButton": "Payment button label",
+        "paymentAmount": "Amount (INR)",
+        "paymentDescription": "Payment description",
+        "paymentSuccess": "After successful payment, advance to",
+        "paymentFailure": "After failed payment, advance to",
+        "urlButtonText": "URL button label",
+        "urlButtonLink": "URL button link",
+        "removeUrlButton": "Remove URL button",
         "promptToCustomer": "Prompt sent to the customer",
         "varKeyLabel": "Variable key (stored in flow_runs.vars; alphanumeric + underscore)",
         "varKeyPlaceholder": "e.g. name, email, company",
@@ -1245,6 +1253,14 @@
           "label": "Send media",
           "blurb": "Sends an image, video, or document"
         },
+        "send_location": {
+          "label": "Send location",
+          "blurb": "Sends a location pin"
+        },
+        "request_location": {
+          "label": "Request location",
+          "blurb": "Asks the customer to share their location"
+        },
         "collect_input": {
           "label": "Collect input",
           "blurb": "Asks a question, saves the reply"
@@ -1256,6 +1272,10 @@
         "set_tag": {
           "label": "Tag contact",
           "blurb": "Adds or removes a contact tag"
+        },
+        "razorpay_payment": {
+          "label": "Razorpay payment",
+          "blurb": "Collects a payment through Razorpay"
         },
         "handoff": {
           "label": "Handoff to agent",
@@ -1303,7 +1323,14 @@
       "namePlaceholder": "Flow name",
       "unsavedHint": "Unsaved changes — hit Save to persist",
       "edited": "Edited",
+      "lastUpdated": "Last updated {date}",
       "runs": "Runs",
+      "exportPC": "Export to PC",
+      "importPC": "Import from PC",
+      "importConfirm": "Importing will replace this editor's current flow details and nodes. It won't be saved until you click Save. The current status is kept; saving an active flow changes its live configuration. Continue?",
+      "importStaged": "Flow imported into the editor. Review it, then save.",
+      "importTooLarge": "Flow file must be 2 MB or smaller.",
+      "importFailed": "Couldn't import flow file.",
       "delete": "Delete",
       "pause": "Pause",
       "activate": "Activate",
@@ -1828,7 +1855,7 @@
     },
     "aiConfig": {
       "title": "Agent setup",
-      "description": "Bring your own OpenAI or Anthropic key. wacrm calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
+      "description": "Bring your own OpenAI, Anthropic, or Gemini key. wacrm calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
       "adminOnlyConfig": "Only admins and owners can change the AI configuration.",
       "loadFailed": "Failed to load AI configuration",
       "providerAndKey": "Provider & key",

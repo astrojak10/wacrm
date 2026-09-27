@@ -51,6 +51,7 @@ import {
 } from "@/lib/flows/validate";
 import { useTranslations } from "next-intl";
 import { unlinkNodeReferences } from "@/lib/flows/edges";
+import { buildEmptyFlowGraph } from "@/lib/flows/templates";
 import type { FlowNodeRow, FlowRow } from "@/lib/flows/types";
 import { NODE_META, slugify, type BuilderNode, type NodeType } from "./shared";
 
@@ -72,6 +73,7 @@ export interface BuilderState {
 export interface FlowEditorContextValue {
   /** Immutable post-load envelope: id, created_at, fallback_policy, etc. */
   flow: FlowRow;
+  lastUpdatedAt: string;
 
   // Authored state
   state: BuilderState;
@@ -105,7 +107,7 @@ export interface FlowEditorContextValue {
   removeNode: (key: string) => void;
 
   // Actions
-  save: () => Promise<void>;
+  save: () => Promise<boolean>;
   setStatus: (status: BuilderState["status"]) => Promise<void>;
   deleteFlow: () => Promise<void>;
 
@@ -269,17 +271,24 @@ export function FlowEditorProvider({
     description: initialFlow.description ?? "",
     trigger_type: initialFlow.trigger_type,
     trigger_config: initialFlow.trigger_config as Record<string, unknown>,
-    entry_node_id: initialFlow.entry_node_id,
+    entry_node_id:
+      initialNodes.length === 0
+        ? buildEmptyFlowGraph().entry_node_id
+        : initialFlow.entry_node_id,
     fallback_policy: initialFlow.fallback_policy,
     status: initialFlow.status,
-    nodes: initialNodes.map((n) => ({
-      node_key: n.node_key,
-      node_type: n.node_type as NodeType,
-      config: n.config as Record<string, unknown>,
-      position_x: n.position_x,
-      position_y: n.position_y,
-    })),
+    nodes:
+      initialNodes.length === 0
+        ? buildEmptyFlowGraph().nodes
+        : initialNodes.map((n) => ({
+            node_key: n.node_key,
+            node_type: n.node_type as NodeType,
+            config: n.config as Record<string, unknown>,
+            position_x: n.position_x,
+            position_y: n.position_y,
+          })),
   }));
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(initialFlow.updated_at);
 
   const [saving, setSaving] = useState(false);
   const [activating, setActivating] = useState(false);
@@ -374,15 +383,19 @@ export function FlowEditorProvider({
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error ?? `Save failed: ${res.status}`);
       }
+      const json = (await res.json()) as { flow?: { updated_at?: string } };
+      if (json.flow?.updated_at) setLastUpdatedAt(json.flow.updated_at);
       setDirty(false);
       toast.success(t("saved"));
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Save failed";
       toast.error(msg);
+      return false;
     } finally {
       setSaving(false);
     }
-  }, [initialFlow.id, state]);
+  }, [initialFlow.id, state, t]);
 
   // ---- Activate / Pause / Archive ----
   const setStatus = useCallback(
@@ -397,7 +410,7 @@ export function FlowEditorProvider({
         // latest state — the user shouldn't have to remember "save
         // then activate".
         if (next === "active") {
-          await save();
+          if (!(await save())) return;
         }
         const res = await fetch(`/api/flows/${initialFlow.id}/activate`, {
           method: "POST",
@@ -408,6 +421,8 @@ export function FlowEditorProvider({
           const json = await res.json().catch(() => ({}));
           throw new Error(json.error ?? `Status update failed: ${res.status}`);
         }
+        const json = (await res.json()) as { flow?: { updated_at?: string } };
+        if (json.flow?.updated_at) setLastUpdatedAt(json.flow.updated_at);
         setStateRaw((s) => ({ ...s, status: next }));
         toast.success(
           next === "active"
@@ -423,7 +438,7 @@ export function FlowEditorProvider({
         setActivating(false);
       }
     },
-    [canActivate, save, initialFlow.id],
+    [canActivate, save, initialFlow.id, t],
   );
 
   // ---- Delete ----
@@ -545,6 +560,7 @@ export function FlowEditorProvider({
   const value = useMemo<FlowEditorContextValue>(
     () => ({
       flow: initialFlow,
+      lastUpdatedAt,
       state,
       setState,
       dirty,
@@ -566,6 +582,7 @@ export function FlowEditorProvider({
     }),
     [
       initialFlow,
+      lastUpdatedAt,
       state,
       setState,
       dirty,

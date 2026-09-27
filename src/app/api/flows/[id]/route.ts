@@ -87,6 +87,71 @@ interface PutBody {
   }>
 }
 
+async function saveFlowAtomically(
+  admin: ReturnType<typeof supabaseAdmin>,
+  flowId: string,
+  flowPatch: Record<string, unknown>,
+  nodes: Array<{
+    node_key: string
+    node_type: string
+    config: Record<string, unknown>
+    position_x?: number
+    position_y?: number
+  }> | null,
+) {
+  const { error: saveErr } = await admin.rpc('save_flow', {
+    p_flow_id: flowId,
+    p_flow_patch: flowPatch,
+    p_nodes: nodes ?? null,
+  })
+
+  if (!saveErr) return
+
+  const missingFunction = /could not find the function.*save_flow|schema cache/i.test(
+    saveErr.message ?? '',
+  )
+  if (!missingFunction) {
+    throw saveErr
+  }
+
+  const { error: flowUpdateErr } = await admin
+    .from('flows')
+    .update({
+      ...flowPatch,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', flowId)
+  if (flowUpdateErr) {
+    throw flowUpdateErr
+  }
+
+  if (!nodes) return
+
+  const { error: deleteErr } = await admin
+    .from('flow_nodes')
+    .delete()
+    .eq('flow_id', flowId)
+  if (deleteErr) {
+    throw deleteErr
+  }
+
+  if (nodes.length === 0) return
+
+  const inserts = nodes.map((node) => ({
+    flow_id: flowId,
+    node_key: node.node_key,
+    node_type: node.node_type,
+    config: node.config ?? {},
+    position_x: node.position_x ?? 0,
+    position_y: node.position_y ?? 0,
+  }))
+
+  const { error: insertErr } = await admin.from('flow_nodes').insert(inserts)
+  if (insertErr) {
+    throw insertErr
+  }
+}
+
 export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> },
@@ -116,14 +181,18 @@ export async function PUT(
     )
   }
 
+  if (body.nodes !== undefined && !Array.isArray(body.nodes)) {
+    return NextResponse.json(
+      { error: 'nodes must be an array' },
+      { status: 400 },
+    )
+  }
   const admin = supabaseAdmin()
 
   // Update the flow row first — the body may not include `nodes` (a
-  // header-only save for editing the trigger config without touching
-  // the graph). Skip node replacement in that case.
-  const flowPatch: Record<string, unknown> = {
-    updated_at: new Date().toISOString(),
-  }
+  // The RPC commits flow metadata and its graph together. A failed
+  // node insert rolls back the delete as well, preserving the last save.
+  const flowPatch: Record<string, unknown> = {}
   if (body.name !== undefined) flowPatch.name = body.name.trim()
   if (body.description !== undefined)
     flowPatch.description = body.description
@@ -135,39 +204,16 @@ export async function PUT(
   if (body.fallback_policy !== undefined)
     flowPatch.fallback_policy = body.fallback_policy
 
-  const { error: updErr } = await admin
-    .from('flows')
-    .update(flowPatch)
-    .eq('id', id)
-  if (updErr) {
-    return NextResponse.json({ error: updErr.message }, { status: 500 })
-  }
-
-  if (body.nodes !== undefined) {
-    // Delete-then-insert. Not transactional but the runner handles
-    // mid-edit reads safely (a node_not_found ends the run cleanly).
-    const { error: delErr } = await admin
-      .from('flow_nodes')
-      .delete()
-      .eq('flow_id', id)
-    if (delErr) {
-      return NextResponse.json({ error: delErr.message }, { status: 500 })
-    }
-    if (body.nodes.length > 0) {
-      const { error: insErr } = await admin.from('flow_nodes').insert(
-        body.nodes.map((n) => ({
-          flow_id: id,
-          node_key: n.node_key,
-          node_type: n.node_type,
-          config: n.config,
-          position_x: n.position_x ?? 0,
-          position_y: n.position_y ?? 0,
-        })),
-      )
-      if (insErr) {
-        return NextResponse.json({ error: insErr.message }, { status: 500 })
-      }
-    }
+  try {
+    await saveFlowAtomically(admin, id, flowPatch, body.nodes ?? null)
+  } catch (err) {
+    return NextResponse.json(
+      {
+        error:
+          err instanceof Error ? err.message : 'Failed to save flow.',
+      },
+      { status: 500 },
+    )
   }
 
   // Re-fetch and return the new state — the editor uses the response

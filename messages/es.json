@@ -1158,6 +1158,14 @@
       "form": {
         "advancesTo": "Avanza a",
         "textToCustomer": "Texto enviado al cliente",
+        "paymentButton": "Etiqueta del botón de pago",
+        "paymentAmount": "Importe (INR)",
+        "paymentDescription": "Descripción del pago",
+        "paymentSuccess": "Tras un pago correcto, avanzar a",
+        "paymentFailure": "Tras un pago fallido, avanzar a",
+        "urlButtonText": "Etiqueta del botón URL",
+        "urlButtonLink": "Enlace del botón URL",
+        "removeUrlButton": "Quitar botón URL",
         "promptToCustomer": "Pregunta enviada al cliente",
         "varKeyLabel": "Clave de la variable (guardada en flow_runs.vars; alfanumérica + guion bajo)",
         "varKeyPlaceholder": "p. ej. name, email, company",
@@ -1245,6 +1253,14 @@
           "label": "Enviar archivo",
           "blurb": "Envía una imagen, video o documento"
         },
+        "send_location": {
+          "label": "Enviar ubicación",
+          "blurb": "Envía una ubicación"
+        },
+        "request_location": {
+          "label": "Solicitar ubicación",
+          "blurb": "Pide al cliente que comparta su ubicación"
+        },
         "collect_input": {
           "label": "Capturar respuesta",
           "blurb": "Hace una pregunta y guarda la respuesta"
@@ -1256,6 +1272,10 @@
         "set_tag": {
           "label": "Etiquetar contacto",
           "blurb": "Agrega o quita una etiqueta del contacto"
+        },
+        "razorpay_payment": {
+          "label": "Pago con Razorpay",
+          "blurb": "Cobra un pago mediante Razorpay"
         },
         "handoff": {
           "label": "Transferir a agente",
@@ -1303,7 +1323,14 @@
       "namePlaceholder": "Nombre del flujo",
       "unsavedHint": "Cambios sin guardar; pulsa Guardar para conservarlos",
       "edited": "Editado",
+      "lastUpdated": "Última actualización: {date}",
       "runs": "Ejecuciones",
+      "exportPC": "Exportar al PC",
+      "importPC": "Importar desde el PC",
+      "importConfirm": "La importación reemplazará los detalles y nodos actuales del editor. No se guardará hasta que pulses Guardar. Se conserva el estado actual; guardar un flujo activo cambia su configuración en producción. ¿Continuar?",
+      "importStaged": "Flujo importado en el editor. Revísalo y guárdalo.",
+      "importTooLarge": "El archivo del flujo debe tener 2 MB o menos.",
+      "importFailed": "No se pudo importar el archivo del flujo.",
       "delete": "Eliminar",
       "pause": "Pausar",
       "activate": "Activar",
@@ -1816,7 +1843,7 @@
     },
     "aiConfig": {
       "title": "Configuración del agente",
-      "description": "Usa tu propia clave de OpenAI o Anthropic. wacrm llama al proveedor directamente con tu clave: sin cargos de IA por usuario, y tus datos siguen siendo tuyos. Esto impulsa las respuestas redactadas con IA en la bandeja de entrada, el bot de respuesta automática y el Playground.",
+      "description": "Usa tu propia clave de OpenAI, Anthropic o Gemini. wacrm llama al proveedor directamente con tu clave: sin cargos de IA por usuario, y tus datos siguen siendo tuyos. Esto impulsa las respuestas redactadas con IA en la bandeja de entrada, el bot de respuesta automática y el Playground.",
       "adminOnlyConfig": "Solo los administradores y propietarios pueden cambiar la configuración de IA.",
       "loadFailed": "Error al cargar la configuración de IA",
       "providerAndKey": "Proveedor y clave",

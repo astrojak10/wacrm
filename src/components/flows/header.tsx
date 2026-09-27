@@ -60,6 +60,7 @@ export function EditorHeader() {
   const [importing, setImporting] = useState(false);
   const {
     flow,
+    lastUpdatedAt,
     state,
     setState,
     dirty,
@@ -260,6 +261,12 @@ export function EditorHeader() {
         </div>
       </div>
 
+      <div className="flex items-center px-2 text-xs text-muted-foreground">
+        <time dateTime={lastUpdatedAt ?? undefined}>
+          {t("lastUpdated", { date: formatUtcTimestamp(lastUpdatedAt) })}
+        </time>
+      </div>
+
       {/* ---- description note (subtle, inline-editable) ---- */}
       <input
         value={state.description}
@@ -272,6 +279,17 @@ export function EditorHeader() {
       />
     </div>
   );
+}
+
+function formatUtcTimestamp(value?: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    const raw = String(value).trim();
+    if (!raw) return "—";
+    return raw;
+  }
+  return `${date.toISOString().slice(0, 19).replace("T", " ")} UTC`;
 }
 
 function StatusChip({ status }: { status: BuilderState["status"] }) {

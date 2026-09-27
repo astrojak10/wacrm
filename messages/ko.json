@@ -1158,6 +1158,14 @@
       "form": {
         "advancesTo": "다음 진행",
         "textToCustomer": "고객에게 전송되는 텍스트",
+        "paymentButton": "결제 버튼 라벨",
+        "paymentAmount": "금액 (INR)",
+        "paymentDescription": "결제 설명",
+        "paymentSuccess": "결제 성공 시 다음으로 이동",
+        "paymentFailure": "결제 실패 시 다음으로 이동",
+        "urlButtonText": "URL 버튼 라벨",
+        "urlButtonLink": "URL 버튼 링크",
+        "removeUrlButton": "URL 버튼 제거",
         "promptToCustomer": "고객에게 전송되는 질문",
         "varKeyLabel": "변수 키 (flow_runs.vars에 저장됨; 영숫자 + 밑줄만 사용)",
         "varKeyPlaceholder": "예: name, email, company",
@@ -1245,6 +1253,14 @@
           "label": "미디어 보내기",
           "blurb": "이미지, 동영상, 문서를 보냅니다"
         },
+        "send_location": {
+          "label": "위치 보내기",
+          "blurb": "위치 정보를 보냅니다"
+        },
+        "request_location": {
+          "label": "위치 요청",
+          "blurb": "고객에게 위치 공유를 요청합니다"
+        },
         "collect_input": {
           "label": "입력 수집",
           "blurb": "질문을 하고 응답을 저장합니다"
@@ -1256,6 +1272,10 @@
         "set_tag": {
           "label": "연락처 태그 지정",
           "blurb": "연락처 태그를 추가하거나 제거합니다"
+        },
+        "razorpay_payment": {
+          "label": "Razorpay 결제",
+          "blurb": "Razorpay를 통해 결제를 받습니다"
         },
         "handoff": {
           "label": "상담원에게 인계",
@@ -1303,7 +1323,14 @@
       "namePlaceholder": "플로우 이름",
       "unsavedHint": "저장되지 않은 변경 사항 — 저장을 눌러 반영하세요",
       "edited": "수정됨",
+      "lastUpdated": "마지막 업데이트: {date}",
       "runs": "실행",
+      "exportPC": "PC로 내보내기",
+      "importPC": "PC에서 가져오기",
+      "importConfirm": "가져오면 편집기의 현재 플로우 정보와 노드가 대체됩니다. 저장을 누르기 전까지 변경 사항은 저장되지 않습니다. 현재 상태는 유지됩니다. 활성 플로우를 저장하면 실제 설정이 변경됩니다. 계속할까요?",
+      "importStaged": "플로우를 편집기로 가져왔습니다. 검토한 후 저장하세요.",
+      "importTooLarge": "플로우 파일은 2MB 이하여야 합니다.",
+      "importFailed": "플로우 파일을 가져오지 못했습니다.",
       "delete": "삭제",
       "pause": "일시 중지",
       "activate": "활성화",
@@ -1828,7 +1855,7 @@
     },
     "aiConfig": {
       "title": "에이전트 설정",
-      "description": "직접 발급받은 OpenAI 또는 Anthropic 키를 사용하세요. wacrm은 회원님의 키로 공급자에 직접 요청하므로 좌석당 AI 비용이 없고 데이터도 온전히 회원님의 것입니다. 인박스의 AI 답장 초안, 자동 응답 봇, 플레이그라운드에 사용됩니다.",
+      "description": "직접 발급받은 OpenAI, Anthropic 또는 Gemini 키를 사용하세요. wacrm은 회원님의 키로 공급자에 직접 요청하므로 좌석당 AI 비용이 없고 데이터도 온전히 회원님의 것입니다. 인박스의 AI 답장 초안, 자동 응답 봇, 플레이그라운드에 사용됩니다.",
       "adminOnlyConfig": "관리자와 소유자만 AI 설정을 변경할 수 있습니다.",
       "loadFailed": "AI 설정을 불러오지 못했습니다",
       "providerAndKey": "공급자 & 키",

@@ -1158,6 +1158,14 @@
       "form": {
         "advancesTo": "Avança para",
         "textToCustomer": "Texto enviado ao cliente",
+        "paymentButton": "Rótulo do botão de pagamento",
+        "paymentAmount": "Valor (INR)",
+        "paymentDescription": "Descrição do pagamento",
+        "paymentSuccess": "Após pagamento aprovado, avançar para",
+        "paymentFailure": "Após falha no pagamento, avançar para",
+        "urlButtonText": "Texto do botão URL",
+        "urlButtonLink": "Link do botão URL",
+        "removeUrlButton": "Remover botão URL",
         "promptToCustomer": "Pergunta enviada ao cliente",
         "varKeyLabel": "Chave da variável (armazenada em flow_runs.vars; alfanumérico + underscore)",
         "varKeyPlaceholder": "ex.: name, email, company",
@@ -1245,6 +1253,14 @@
           "label": "Enviar mídia",
           "blurb": "Envia uma imagem, vídeo ou documento"
         },
+        "send_location": {
+          "label": "Enviar localização",
+          "blurb": "Envia uma localização"
+        },
+        "request_location": {
+          "label": "Solicitar localização",
+          "blurb": "Pede ao cliente para compartilhar a localização"
+        },
         "collect_input": {
           "label": "Coletar resposta",
           "blurb": "Faz uma pergunta e salva a resposta"
@@ -1256,6 +1272,10 @@
         "set_tag": {
           "label": "Marcar contato",
           "blurb": "Adiciona ou remove uma tag do contato"
+        },
+        "razorpay_payment": {
+          "label": "Pagamento Razorpay",
+          "blurb": "Recebe um pagamento pelo Razorpay"
         },
         "handoff": {
           "label": "Transferir para agente",
@@ -1303,7 +1323,14 @@
       "namePlaceholder": "Nome do fluxo",
       "unsavedHint": "Alterações não salvas — clique em Salvar para mantê-las",
       "edited": "Editado",
+      "lastUpdated": "Última atualização: {date}",
       "runs": "Execuções",
+      "exportPC": "Exportar para o PC",
+      "importPC": "Importar do PC",
+      "importConfirm": "A importação substituirá os detalhes e nós atuais do editor. Nada será salvo até você clicar em Salvar. O status atual será mantido; salvar um fluxo ativo altera sua configuração em produção. Continuar?",
+      "importStaged": "Fluxo importado no editor. Revise e salve.",
+      "importTooLarge": "O arquivo do fluxo deve ter no máximo 2 MB.",
+      "importFailed": "Não foi possível importar o arquivo do fluxo.",
       "delete": "Excluir",
       "pause": "Pausar",
       "activate": "Ativar",
@@ -1816,7 +1843,7 @@
     },
     "aiConfig": {
       "title": "Configuração do agente",
-      "description": "Use sua própria chave da OpenAI ou da Anthropic. O wacrm chama o provedor diretamente com a sua chave — sem taxas de IA por usuário, e seus dados continuam seus. Isso alimenta as respostas redigidas por IA na caixa de entrada, o bot de resposta automática e o Playground.",
+      "description": "Use sua própria chave da OpenAI, Anthropic ou Gemini. O wacrm chama o provedor diretamente com a sua chave — sem taxas de IA por usuário, e seus dados continuam seus. Isso alimenta as respostas redigidas por IA na caixa de entrada, o bot de resposta automática e o Playground.",
       "adminOnlyConfig": "Somente administradores e proprietários podem alterar a configuração de IA.",
       "loadFailed": "Falha ao carregar a configuração de IA",
       "providerAndKey": "Provedor e chave",
