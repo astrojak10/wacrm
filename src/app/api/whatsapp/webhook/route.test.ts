@@ -514,6 +514,36 @@ describe('inbound webhook: template quick-reply buttons (#478)', () => {
   })
 })
 
+describe('inbound webhook: location flow payload', () => {
+  it('forwards location coordinates and optional details to flows', async () => {
+    await runWebhook({
+      id: 'wamid.LOC1',
+      from: '15551230000',
+      timestamp: '1700000000',
+      type: 'location',
+      location: {
+        latitude: 12.9716,
+        longitude: 77.5946,
+        name: 'Office',
+        address: 'Bengaluru',
+      },
+    })
+
+    expect(h.dispatchInboundToFlows).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: {
+          kind: 'location',
+          latitude: 12.9716,
+          longitude: 77.5946,
+          name: 'Office',
+          address: 'Bengaluru',
+          meta_message_id: 'wamid.LOC1',
+        },
+      }),
+    )
+  })
+})
+
 describe('inbound webhook: inbound media is mirrored (#466)', () => {
   const IMAGE_MESSAGE = {
     id: 'wamid.IMG1',

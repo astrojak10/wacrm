@@ -12,6 +12,34 @@ function nodes(...ns: BuilderNode[]): BuilderNode[] {
 }
 
 describe("deriveCanvasEdges — single-outgoing node types", () => {
+  it("keeps location nodes connected through their next edge", () => {
+    for (const nodeType of ["send_location", "request_location"] as const) {
+      const node: BuilderNode = {
+        node_key: nodeType,
+        node_type: nodeType,
+        config: { next_node_key: "done" },
+      };
+      const nodes: BuilderNode[] = [
+        node,
+        { node_key: "done", node_type: "end", config: {} },
+      ];
+      expect(deriveCanvasEdges(nodes)).toContainEqual(
+        expect.objectContaining({
+          source: nodeType,
+          target: "done",
+          sourceHandle: "next",
+        }),
+      );
+      expect(outgoingSlots(node).map((slot) => slot.id)).toEqual(["next"]);
+      expect(applyEdgeConnection(node, "next", "later")).toEqual({
+        next_node_key: "later",
+      });
+      expect(unlinkNodeReferences(nodes, "done")[0].config).toMatchObject({
+        next_node_key: "",
+      });
+    }
+  });
+
   it("derives a `next` edge from send_message", () => {
     const edges = deriveCanvasEdges(
       nodes(

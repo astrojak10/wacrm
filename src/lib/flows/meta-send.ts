@@ -1,6 +1,9 @@
 import {
   sendInteractiveButtons,
+  sendCtaUrlMessage,
   sendInteractiveList,
+  sendLocationMessage,
+  sendLocationRequestMessage,
   sendMediaMessage,
   sendTextMessage,
   type InteractiveButton,
@@ -311,6 +314,37 @@ interface SendInteractiveListEngineArgs {
   footerText?: string
 }
 
+interface SendCtaUrlEngineArgs {
+  accountId: string
+  userId: string
+  conversationId: string
+  contactId: string
+  bodyText: string
+  buttonText: string
+  buttonUrl: string
+  headerText?: string
+  footerText?: string
+}
+
+interface SendLocationRequestEngineArgs {
+  accountId: string
+  userId: string
+  conversationId: string
+  contactId: string
+  bodyText: string
+}
+
+interface SendLocationEngineArgs {
+  accountId: string
+  userId: string
+  conversationId: string
+  contactId: string
+  latitude: number
+  longitude: number
+  name?: string
+  address?: string
+}
+
 /**
  * Send an interactive-button WhatsApp message from the Flows engine.
  *
@@ -338,9 +372,100 @@ export async function engineSendInteractiveList(
   return sendInteractiveViaMeta({ ...args, kind: 'list' })
 }
 
+export async function engineSendCtaUrl(
+  args: SendCtaUrlEngineArgs,
+): Promise<{ whatsapp_message_id: string }> {
+  return sendInteractiveViaMeta({ ...args, kind: 'cta_url' })
+}
+
+export async function engineSendLocationRequest(
+  args: SendLocationRequestEngineArgs,
+): Promise<{ whatsapp_message_id: string }> {
+  return sendInteractiveViaMeta({ ...args, kind: 'location_request' })
+}
+
+export async function engineSendLocation(
+  args: SendLocationEngineArgs,
+): Promise<{ whatsapp_message_id: string }> {
+  const db = supabaseAdmin()
+  const { data: contact, error: contactErr } = await db
+    .from('contacts')
+    .select('id, phone, wa_user_id')
+    .eq('id', args.contactId)
+    .eq('account_id', args.accountId)
+    .maybeSingle()
+  if (contactErr || !contact) throw new Error('contact not found for this account')
+
+  const sendTarget = resolveContactSendTarget(contact)
+  if (!sendTarget) {
+    throw new Error(
+      `contact has no usable WhatsApp address (phone: ${contact.phone || 'none'})`,
+    )
+  }
+  const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
+    db,
+    args.accountId,
+  )
+  const variants = sendTarget.isPhone ? phoneVariants(sendTarget.target) : [sendTarget.target]
+  let workingPhone = sendTarget.target
+  let whatsappMessageId = ''
+  let lastError: unknown = null
+  for (const phone of variants) {
+    try {
+      const result = await sendLocationMessage({
+        phoneNumberId,
+        accessToken,
+        to: phone,
+        latitude: args.latitude,
+        longitude: args.longitude,
+        name: args.name,
+        address: args.address,
+      })
+      whatsappMessageId = result.messageId
+      workingPhone = phone
+      lastError = null
+      break
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!isRecipientNotAllowedError(message)) throw error
+      lastError = error
+    }
+  }
+  if (lastError) throw lastError
+  if (sendTarget.isPhone && workingPhone !== sendTarget.target) {
+    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
+  }
+
+  const contentText = [
+    args.name?.trim(),
+    args.address?.trim(),
+    `${args.latitude}, ${args.longitude}`,
+  ].filter(Boolean).join(' - ')
+  const { error: msgErr } = await db.from('messages').insert({
+    conversation_id: args.conversationId,
+    sender_type: 'bot',
+    content_type: 'location',
+    content_text: contentText,
+    message_id: whatsappMessageId,
+    status: 'sent',
+  })
+  if (msgErr) throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
+  await db
+    .from('conversations')
+    .update({
+      last_message_text: contentText,
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', args.conversationId)
+  return { whatsapp_message_id: whatsappMessageId }
+}
+
 type SendInput =
   | (SendInteractiveButtonsEngineArgs & { kind: 'buttons' })
   | (SendInteractiveListEngineArgs & { kind: 'list' })
+  | (SendCtaUrlEngineArgs & { kind: 'cta_url' })
+  | (SendLocationRequestEngineArgs & { kind: 'location_request' })
 
 async function sendInteractiveViaMeta(
   input: SendInput,
@@ -388,15 +513,37 @@ async function sendInteractiveViaMeta(
       })
       return r.messageId
     }
-    const r = await sendInteractiveList({
+    if (input.kind === 'list') {
+      const r = await sendInteractiveList({
+        phoneNumberId,
+        accessToken,
+        to: phone,
+        bodyText: input.bodyText,
+        buttonLabel: input.buttonLabel,
+        sections: input.sections,
+        headerText: input.headerText,
+        footerText: input.footerText,
+      })
+      return r.messageId
+    }
+    if (input.kind === 'cta_url') {
+      const r = await sendCtaUrlMessage({
+        phoneNumberId,
+        accessToken,
+        to: phone,
+        bodyText: input.bodyText,
+        buttonText: input.buttonText,
+        buttonUrl: input.buttonUrl,
+        headerText: input.headerText,
+        footerText: input.footerText,
+      })
+      return r.messageId
+    }
+    const r = await sendLocationRequestMessage({
       phoneNumberId,
       accessToken,
       to: phone,
       bodyText: input.bodyText,
-      buttonLabel: input.buttonLabel,
-      sections: input.sections,
-      headerText: input.headerText,
-      footerText: input.footerText,
     })
     return r.messageId
   }
@@ -437,23 +584,39 @@ async function sendInteractiveViaMeta(
   // when their reply arrives. We DO persist the structured payload so
   // the inbox thread re-renders the buttons/rows the bot sent (round-
   // trip), matching the composer + automation send paths.
-  const interactivePayload: InteractiveMessagePayload =
-    input.kind === 'buttons'
-      ? {
-          kind: 'buttons',
-          body: input.bodyText,
-          header: input.headerText,
-          footer: input.footerText,
-          buttons: input.buttons,
-        }
-      : {
-          kind: 'list',
-          body: input.bodyText,
-          header: input.headerText,
-          footer: input.footerText,
-          button_label: input.buttonLabel,
-          sections: input.sections,
-        }
+  let interactivePayload: InteractiveMessagePayload
+  if (input.kind === 'buttons') {
+    interactivePayload = {
+      kind: 'buttons',
+      body: input.bodyText,
+      header: input.headerText,
+      footer: input.footerText,
+      buttons: input.buttons,
+    }
+  } else if (input.kind === 'list') {
+    interactivePayload = {
+      kind: 'list',
+      body: input.bodyText,
+      header: input.headerText,
+      footer: input.footerText,
+      button_label: input.buttonLabel,
+      sections: input.sections,
+    }
+  } else if (input.kind === 'cta_url') {
+    interactivePayload = {
+      kind: 'cta_url',
+      body: input.bodyText,
+      header: input.headerText,
+      footer: input.footerText,
+      button_text: input.buttonText,
+      button_url: input.buttonUrl,
+    }
+  } else {
+    interactivePayload = {
+      kind: 'location_request',
+      body: input.bodyText,
+    }
+  }
 
   const { error: msgErr } = await db.from('messages').insert({
     conversation_id: input.conversationId,

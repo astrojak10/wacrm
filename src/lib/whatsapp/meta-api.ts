@@ -874,6 +874,94 @@ export async function sendTypingIndicator(
 }
 
 // ============================================================
+// Location messages
+// ============================================================
+
+export interface SendLocationMessageArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  latitude: number
+  longitude: number
+  name?: string
+  address?: string
+}
+
+export async function sendLocationMessage(
+  args: SendLocationMessageArgs,
+): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, latitude, longitude, name, address } = args
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+    throw new Error('Location latitude must be between -90 and 90.')
+  }
+  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    throw new Error('Location longitude must be between -180 and 180.')
+  }
+  const location: Record<string, unknown> = { latitude, longitude }
+  if (name?.trim()) location.name = name.trim()
+  if (address?.trim()) location.address = address.trim()
+
+  const response = await fetch(`${META_API_BASE}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      ...recipientFields(to),
+      type: 'location',
+      location,
+    }),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
+export interface SendLocationRequestArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  bodyText: string
+  contextMessageId?: string
+}
+
+export async function sendLocationRequestMessage(
+  args: SendLocationRequestArgs,
+): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, bodyText, contextMessageId } = args
+  validateInteractiveBody(bodyText)
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    ...recipientFields(to),
+    type: 'interactive',
+    interactive: {
+      type: 'location_request_message',
+      body: { text: bodyText },
+      action: { name: 'send_location' },
+    },
+  }
+  if (contextMessageId) body.context = { message_id: contextMessageId }
+
+  const response = await fetch(`${META_API_BASE}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
+// ============================================================
 // Interactive (button replies + list messages)
 // ============================================================
 //
@@ -973,6 +1061,82 @@ export async function sendInteractiveButtons(
         type: 'reply',
         reply: { id: b.id, title: b.title },
       })),
+    },
+  }
+  if (headerText) interactive.header = { type: 'text', text: headerText }
+  if (footerText) interactive.footer = { text: footerText }
+
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    ...recipientFields(to),
+    type: 'interactive',
+    interactive,
+  }
+  if (contextMessageId) body.context = { message_id: contextMessageId }
+
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
+export interface SendCtaUrlArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  bodyText: string
+  buttonText: string
+  buttonUrl: string
+  headerText?: string
+  footerText?: string
+  contextMessageId?: string
+}
+
+/** Send a WhatsApp interactive CTA URL message. */
+export async function sendCtaUrlMessage(
+  args: SendCtaUrlArgs
+): Promise<MetaSendResult> {
+  const {
+    phoneNumberId, accessToken, to,
+    bodyText, buttonText, buttonUrl, headerText, footerText, contextMessageId,
+  } = args
+  validateInteractiveBody(bodyText)
+  validateInteractiveHeaderFooter(headerText, footerText)
+  if (!buttonText.trim()) throw new Error('CTA URL button is missing display text.')
+  if (buttonText.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
+    throw new Error(
+      `CTA URL button text exceeds ${INTERACTIVE_LIMITS.buttonTitleMaxLength} chars.`
+    )
+  }
+  let parsedUrl: URL
+  try {
+    parsedUrl = new URL(buttonUrl)
+  } catch {
+    throw new Error('CTA URL button requires an absolute HTTPS URL.')
+  }
+  if (parsedUrl.protocol !== 'https:' || parsedUrl.username || parsedUrl.password) {
+    throw new Error('CTA URL button requires an absolute HTTPS URL.')
+  }
+
+  const interactive: Record<string, unknown> = {
+    type: 'cta_url',
+    body: { text: bodyText },
+    action: {
+      name: 'cta_url',
+      parameters: {
+        display_text: buttonText,
+        url: buttonUrl.trim(),
+      },
     },
   }
   if (headerText) interactive.header = { type: 'text', text: headerText }

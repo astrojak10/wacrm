@@ -1,6 +1,6 @@
 "use client";
 
-import { List, Reply } from "lucide-react";
+import { ExternalLink, List, MapPin, Reply } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
 
@@ -37,6 +37,8 @@ export function InteractivePreview({
   const bodyLabel = labels?.body ?? "Message body…";
   const buttonLabel = labels?.button ?? "Button";
   const menuLabel = labels?.menu ?? "Menu";
+  const header = payload.kind === "location_request" ? undefined : payload.header;
+  const footer = payload.kind === "location_request" ? undefined : payload.footer;
   return (
     <div
       className={cn(
@@ -45,9 +47,9 @@ export function InteractivePreview({
       )}
     >
       <div className="px-3 py-2">
-        {payload.header ? (
+        {header ? (
           <p className="mb-1 break-words text-sm font-semibold">
-            {payload.header}
+            {header}
           </p>
         ) : null}
         <p className="whitespace-pre-wrap break-words text-sm">
@@ -55,14 +57,32 @@ export function InteractivePreview({
             <span className="text-muted-foreground">{bodyLabel}</span>
           )}
         </p>
-        {payload.footer ? (
+        {footer ? (
           <p className="mt-1 break-words text-[11px] text-muted-foreground">
-            {payload.footer}
+            {footer}
           </p>
         ) : null}
       </div>
 
-      {payload.kind === "buttons" ? (
+      {payload.kind === "cta_url" ? (
+        <button
+          type="button"
+          disabled
+          className="flex w-full items-center justify-center gap-1.5 border-t border-border py-2 text-sm font-medium text-primary"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          <span className="truncate">{payload.button_text || buttonLabel}</span>
+        </button>
+      ) : payload.kind === "location_request" ? (
+        <button
+          type="button"
+          disabled
+          className="flex w-full items-center justify-center gap-1.5 border-t border-border py-2 text-sm font-medium text-primary"
+        >
+          <MapPin className="h-3.5 w-3.5" />
+          <span className="truncate">Share location</span>
+        </button>
+      ) : payload.kind === "buttons" ? (
         <div className="flex flex-col border-t border-border">
           {payload.buttons.map((b, i) => (
             <button

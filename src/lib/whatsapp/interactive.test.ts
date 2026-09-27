@@ -131,6 +131,28 @@ describe('validateInteractivePayload — list', () => {
   })
 })
 
+describe('validateInteractivePayload — CTA URL', () => {
+  const validCta = {
+    kind: 'cta_url',
+    body: 'Your payment is ready.',
+    button_text: 'Pay Now',
+    button_url: 'https://pay.example.test/checkout',
+  }
+
+  it('accepts an HTTPS CTA URL button', () => {
+    expect(validateInteractivePayload(validCta)).toEqual({ ok: true })
+  })
+
+  it('rejects non-HTTPS URLs and overlong labels', () => {
+    expect(
+      validateInteractivePayload({ ...validCta, button_url: 'http://pay.example.test' }).ok,
+    ).toBe(false)
+    expect(
+      validateInteractivePayload({ ...validCta, button_text: 'x'.repeat(21) }).ok,
+    ).toBe(false)
+  })
+})
+
 describe('interactivePayloadPreviewText', () => {
   it('returns the trimmed body', () => {
     expect(interactivePayloadPreviewText({ ...validButtons, body: '  Hi  ' })).toBe('Hi')
@@ -138,5 +160,13 @@ describe('interactivePayloadPreviewText', () => {
   it('falls back when body is blank', () => {
     expect(interactivePayloadPreviewText({ ...validButtons, body: '   ' })).toBe('[buttons]')
     expect(interactivePayloadPreviewText({ ...validList, body: '' })).toBe('[list]')
+    expect(
+      interactivePayloadPreviewText({
+        kind: 'cta_url',
+        body: '',
+        button_text: 'Pay Now',
+        button_url: 'https://pay.example.test',
+      }),
+    ).toBe('[CTA URL]')
   })
 })

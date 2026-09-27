@@ -87,6 +87,8 @@ describe("defaultConfigFor", () => {
     "send_buttons",
     "send_list",
     "send_media",
+    "send_location",
+    "request_location",
     "collect_input",
     "condition",
     "set_tag",
@@ -119,6 +121,19 @@ describe("defaultConfigFor", () => {
   it("send_media defaults to image (the most common case)", () => {
     const cfg = defaultConfigFor("send_media") as { media_type?: string };
     expect(cfg.media_type).toBe("image");
+  });
+
+  it("send_location has empty coordinate fields ready for editing", () => {
+    const cfg = defaultConfigFor("send_location") as {
+      latitude?: string;
+      longitude?: string;
+    };
+    expect(cfg).toEqual(expect.objectContaining({ latitude: "", longitude: "" }));
+  });
+
+  it("request_location has a valid default variable prefix", () => {
+    const cfg = defaultConfigFor("request_location") as { var_key?: string };
+    expect(cfg.var_key).toMatch(/^[a-zA-Z_][a-zA-Z0-9_]*$/);
   });
 
   it("collect_input ships a valid var_key that passes the validator regex", () => {

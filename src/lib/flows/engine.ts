@@ -34,8 +34,11 @@
 
 import { supabaseAdmin } from "./admin-client";
 import {
+  engineSendCtaUrl,
   engineSendInteractiveButtons,
   engineSendInteractiveList,
+  engineSendLocation,
+  engineSendLocationRequest,
   engineSendMedia,
   engineSendText,
 } from "./meta-send";
@@ -51,7 +54,9 @@ import {
   type FlowRow,
   type FlowRunRow,
   type ParsedInbound,
+  type RequestLocationNodeConfig,
   type SendButtonsNodeConfig,
+  type SendLocationNodeConfig,
   type SendListNodeConfig,
   type SendMediaNodeConfig,
   type SendMessageNodeConfig,
@@ -128,6 +133,7 @@ export function matchesKeywordTrigger(
  */
 export function entryTriggerTexts(message: ParsedInbound): string[] {
   if (message.kind === "text") return [message.text];
+  if (message.kind === "location") return [];
   return [...new Set([message.reply_title, message.reply_id])].filter(
     (v): v is string => Boolean(v && v.trim()),
   );
@@ -139,6 +145,7 @@ export function isAutoAdvancing(node_type: string): boolean {
     node_type === "start" ||
     node_type === "send_message" ||
     node_type === "send_media" ||
+    node_type === "send_location" ||
     node_type === "condition" ||
     node_type === "set_tag"
   );
@@ -149,6 +156,7 @@ export function isSuspending(node_type: string): boolean {
   return (
     node_type === "send_buttons" ||
     node_type === "send_list" ||
+    node_type === "request_location" ||
     node_type === "collect_input"
   );
 }
@@ -476,6 +484,36 @@ async function sendListAndSuspend(
   return { outcome: "advanced", node_key: node.node_key };
 }
 
+async function requestLocationAndSuspend(
+  db: AdminClient,
+  run: FlowRunRow,
+  node: FlowNodeRow,
+): Promise<void> {
+  const cfg = node.config as unknown as RequestLocationNodeConfig;
+  const { whatsapp_message_id } = await engineSendLocationRequest({
+    accountId: run.account_id,
+    userId: run.user_id,
+    conversationId: run.conversation_id!,
+    contactId: run.contact_id!,
+    bodyText: interpolateVars(cfg.text, run.vars),
+  });
+  await logEvent(db, run.id, "message_sent", node.node_key, {
+    node_type: "request_location",
+    whatsapp_message_id,
+  });
+  const { data: msg } = await db
+    .from("messages")
+    .select("id")
+    .eq("message_id", whatsapp_message_id)
+    .maybeSingle();
+  await db
+    .from("flow_runs")
+    .update({
+      last_prompt_message_id: (msg as { id: string } | null)?.id ?? null,
+    })
+    .eq("id", run.id);
+}
+
 async function executeHandoff(
   db: AdminClient,
   run: FlowRunRow,
@@ -643,13 +681,23 @@ async function advanceFromNodeKey(
     if (node.node_type === "send_message") {
       const cfg = node.config as unknown as SendMessageNodeConfig;
       try {
-        const { whatsapp_message_id } = await engineSendText({
+        const common = {
           accountId: run.account_id,
-    userId: run.user_id,
+          userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
-          text: interpolateVars(cfg.text, run.vars),
-        });
+        };
+        const { whatsapp_message_id } = cfg.url_button
+          ? await engineSendCtaUrl({
+              ...common,
+              bodyText: interpolateVars(cfg.text, run.vars),
+              buttonText: interpolateVars(cfg.url_button.text, run.vars),
+              buttonUrl: interpolateVars(cfg.url_button.url, run.vars),
+            })
+          : await engineSendText({
+              ...common,
+              text: interpolateVars(cfg.text, run.vars),
+            });
         await logEvent(db, run.id, "message_sent", node.node_key, {
           node_type: "send_message",
           whatsapp_message_id,
@@ -691,6 +739,34 @@ async function advanceFromNodeKey(
           detail: err instanceof Error ? err.message : String(err),
         });
         await endRun(db, run.id, "failed", "send_media_failed");
+        return { outcome: "completed" };
+      }
+      currentKey = cfg.next_node_key;
+      continue;
+    }
+    if (node.node_type === "send_location") {
+      const cfg = node.config as unknown as SendLocationNodeConfig;
+      try {
+        const { whatsapp_message_id } = await engineSendLocation({
+          accountId: run.account_id,
+          userId: run.user_id,
+          conversationId: run.conversation_id!,
+          contactId: run.contact_id!,
+          latitude: Number(cfg.latitude),
+          longitude: Number(cfg.longitude),
+          name: cfg.name ? interpolateVars(cfg.name, run.vars) : undefined,
+          address: cfg.address ? interpolateVars(cfg.address, run.vars) : undefined,
+        });
+        await logEvent(db, run.id, "message_sent", node.node_key, {
+          node_type: "send_location",
+          whatsapp_message_id,
+        });
+      } catch (err) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "send_location_failed",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        await endRun(db, run.id, "failed", "send_location_failed");
         return { outcome: "completed" };
       }
       currentKey = cfg.next_node_key;
@@ -840,6 +916,30 @@ async function advanceFromNodeKey(
           detail: err instanceof Error ? err.message : String(err),
         });
         await endRun(db, run.id, "failed", "send_list_failed");
+        return { outcome: "completed" };
+      }
+      const advanced = await advanceCurrentNodeKey(
+        db,
+        run.id,
+        run.current_node_key,
+        node.node_key,
+      );
+      if (!advanced) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "lost_race_during_advance",
+        });
+      }
+      return { outcome: "advanced" };
+    }
+    if (node.node_type === "request_location") {
+      try {
+        await requestLocationAndSuspend(db, run, node);
+      } catch (err) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "request_location_failed",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        await endRun(db, run.id, "failed", "request_location_failed");
         return { outcome: "completed" };
       }
       const advanced = await advanceCurrentNodeKey(
@@ -1051,6 +1151,36 @@ async function handleReplyForActiveRun(
         matched = cfg.next_node_key;
       }
     }
+  } else if (
+    message.kind === "location" &&
+    currentNode.node_type === "request_location" &&
+    Number.isFinite(message.latitude) &&
+    Number.isFinite(message.longitude)
+  ) {
+    const cfg = currentNode.config as unknown as RequestLocationNodeConfig;
+    const prefix = cfg.var_key;
+    if (prefix) {
+      const newVars = {
+        ...run.vars,
+        [`${prefix}_latitude`]: String(message.latitude),
+        [`${prefix}_longitude`]: String(message.longitude),
+        [`${prefix}_name`]: message.name ?? "",
+        [`${prefix}_address`]: message.address ?? "",
+      };
+      const { error: locationErr } = await db
+        .from("flow_runs")
+        .update({ vars: newVars, reprompt_count: 0 })
+        .eq("id", run.id);
+      if (!locationErr) {
+        run.vars = newVars;
+        run.reprompt_count = 0;
+        await logEvent(db, run.id, "node_entered", currentNode.node_key, {
+          location_shared: true,
+          captured_prefix: prefix,
+        });
+        matched = cfg.next_node_key;
+      }
+    }
   }
 
   if (matched) {
@@ -1117,6 +1247,8 @@ async function handleReplyForActiveRun(
           contactId: run.contact_id!,
           text: interpolateVars(cfg.prompt_text, run.vars),
         });
+      } else if (currentNode.node_type === "request_location") {
+        await requestLocationAndSuspend(db, run, currentNode);
       }
     } catch (err) {
       await logEvent(db, run.id, "error", currentNode.node_key, {

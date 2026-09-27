@@ -166,6 +166,20 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
         filename: "",
         next_node_key: "",
       };
+    case "send_location":
+      return {
+        latitude: "",
+        longitude: "",
+        name: "",
+        address: "",
+        next_node_key: "",
+      };
+    case "request_location":
+      return {
+        text: "Please share your location.",
+        var_key: "location",
+        next_node_key: "",
+      };
     case "collect_input":
       return {
         prompt_text: "",

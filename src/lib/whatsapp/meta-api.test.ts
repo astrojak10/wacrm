@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   INTERACTIVE_LIMITS,
+  sendCtaUrlMessage,
+  sendLocationMessage,
+  sendLocationRequestMessage,
   sendInteractiveButtons,
   sendInteractiveList,
 } from "./meta-api";
@@ -136,6 +139,154 @@ describe("sendInteractiveButtons — validation", () => {
             { type: "reply", reply: { id: "no", title: "No" } },
           ],
         },
+      },
+    });
+  });
+});
+
+describe("sendCtaUrlMessage", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn(neverFetch));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects invalid URLs and overlong button text before sending", async () => {
+    await expect(
+      sendCtaUrlMessage({
+        ...BASE_ARGS,
+        buttonText: "Pay Now",
+        buttonUrl: "javascript:alert(1)",
+      }),
+    ).rejects.toThrow(/HTTPS URL/);
+    await expect(
+      sendCtaUrlMessage({
+        ...BASE_ARGS,
+        buttonText: "x".repeat(INTERACTIVE_LIMITS.buttonTitleMaxLength + 1),
+        buttonUrl: "https://pay.example.test/checkout",
+      }),
+    ).rejects.toThrow(/exceeds 20 chars/);
+  });
+
+  it("sends a CTA URL button with its URL in the action parameters", async () => {
+    let captured: { body: unknown } | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        captured = { body: JSON.parse(String(init.body)) };
+        return new Response(
+          JSON.stringify({ messages: [{ id: "wamid.CTA" }] }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    const result = await sendCtaUrlMessage({
+      ...BASE_ARGS,
+      buttonText: "Pay Now",
+      buttonUrl: "https://pay.example.test/checkout",
+    });
+
+    expect(result).toEqual({ messageId: "wamid.CTA" });
+    expect(captured!.body).toMatchObject({
+      type: "interactive",
+      interactive: {
+        type: "cta_url",
+        body: { text: "Body text" },
+        action: {
+          name: "cta_url",
+          parameters: {
+            display_text: "Pay Now",
+            url: "https://pay.example.test/checkout",
+          },
+        },
+      },
+    });
+  });
+});
+
+describe("location message senders", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn(neverFetch));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects coordinates outside valid geographic ranges", async () => {
+    await expect(
+      sendLocationMessage({
+        ...BASE_ARGS,
+        latitude: 91,
+        longitude: 0,
+      }),
+    ).rejects.toThrow(/latitude/);
+    await expect(
+      sendLocationMessage({
+        ...BASE_ARGS,
+        latitude: 0,
+        longitude: -181,
+      }),
+    ).rejects.toThrow(/longitude/);
+  });
+
+  it("sends a location pin using Meta's location payload", async () => {
+    let captured: { body: unknown } | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        captured = { body: JSON.parse(String(init.body)) };
+        return new Response(
+          JSON.stringify({ messages: [{ id: "wamid.LOC" }] }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    await sendLocationMessage({
+      ...BASE_ARGS,
+      latitude: 12.9716,
+      longitude: 77.5946,
+      name: "WACRM Office",
+      address: "Bengaluru",
+    });
+
+    expect(captured!.body).toMatchObject({
+      type: "location",
+      location: {
+        latitude: 12.9716,
+        longitude: 77.5946,
+        name: "WACRM Office",
+        address: "Bengaluru",
+      },
+    });
+  });
+
+  it("sends a location request interactive message", async () => {
+    let captured: { body: unknown } | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        captured = { body: JSON.parse(String(init.body)) };
+        return new Response(
+          JSON.stringify({ messages: [{ id: "wamid.LOCREQ" }] }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    await sendLocationRequestMessage({
+      ...BASE_ARGS,
+      bodyText: "Share your location so we can find nearby service.",
+    });
+
+    expect(captured!.body).toMatchObject({
+      type: "interactive",
+      interactive: {
+        type: "location_request_message",
+        body: { text: "Share your location so we can find nearby service." },
+        action: { name: "send_location" },
       },
     });
   });

@@ -30,6 +30,11 @@ export interface StartNodeConfig {
 export interface SendMessageNodeConfig {
   /** Plain text sent to the customer; can interpolate {{vars.X}}. */
   text: string;
+  /** Optional WhatsApp CTA URL button shown below the message body. */
+  url_button?: {
+    text: string;
+    url: string;
+  };
   /** Auto-advance target after the message lands at Meta. */
   next_node_key: string;
 }
@@ -94,6 +99,21 @@ export interface SendMediaNodeConfig {
    */
   filename?: string;
   /** Auto-advance target after the send lands at Meta. */
+  next_node_key: string;
+}
+
+export interface SendLocationNodeConfig {
+  latitude: string;
+  longitude: string;
+  name?: string;
+  address?: string;
+  next_node_key: string;
+}
+
+export interface RequestLocationNodeConfig {
+  text: string;
+  /** Prefix for the captured `<prefix>_latitude`, `_longitude`, `_name`, and `_address` vars. */
+  var_key: string;
   next_node_key: string;
 }
 
@@ -190,6 +210,8 @@ export type FlowNodeConfig =
   | { node_type: "send_buttons"; config: SendButtonsNodeConfig }
   | { node_type: "send_list"; config: SendListNodeConfig }
   | { node_type: "send_media"; config: SendMediaNodeConfig }
+  | { node_type: "send_location"; config: SendLocationNodeConfig }
+  | { node_type: "request_location"; config: RequestLocationNodeConfig }
   | { node_type: "collect_input"; config: CollectInputNodeConfig }
   | { node_type: "condition"; config: ConditionNodeConfig }
   | { node_type: "set_tag"; config: SetTagNodeConfig }
@@ -326,6 +348,14 @@ export type ParsedInbound =
       reply_id: string;
       /** The visible title of the tapped option (for logging). */
       reply_title: string;
+      meta_message_id: string;
+    }
+  | {
+      kind: "location";
+      latitude: number;
+      longitude: number;
+      name?: string;
+      address?: string;
       meta_message_id: string;
     };
 

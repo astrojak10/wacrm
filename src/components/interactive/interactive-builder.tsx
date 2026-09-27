@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { MapPin, Plus, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
@@ -81,7 +81,11 @@ export function InteractiveBuilder({
 
   const switchKind = (kind: "buttons" | "list") => {
     if (kind === value.kind) return;
-    const shared = { body: value.body, header: value.header, footer: value.footer };
+    const shared = {
+      body: value.body,
+      header: value.kind === "location_request" ? undefined : value.header,
+      footer: value.kind === "location_request" ? undefined : value.footer,
+    };
     onChange(
       kind === "buttons"
         ? { ...blankButtonsPayload(), ...shared }
@@ -124,35 +128,61 @@ export function InteractiveBuilder({
             />
           </Field>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Field
-              label={t("header")}
-              counter={`${(value.header ?? "").length}/${INTERACTIVE_LIMITS.headerTextMaxLength}`}
-            >
-              <Input
-                value={value.header ?? ""}
-                maxLength={INTERACTIVE_LIMITS.headerTextMaxLength}
-                onChange={(e) => setField({ header: e.target.value })}
-                className="bg-muted text-foreground"
-              />
-            </Field>
-            <Field
-              label={t("footer")}
-              counter={`${(value.footer ?? "").length}/${INTERACTIVE_LIMITS.footerMaxLength}`}
-            >
-              <Input
-                value={value.footer ?? ""}
-                maxLength={INTERACTIVE_LIMITS.footerMaxLength}
-                onChange={(e) => setField({ footer: e.target.value })}
-                className="bg-muted text-foreground"
-              />
-            </Field>
-          </div>
+          {value.kind !== "location_request" && (
+            <div className="grid grid-cols-2 gap-2">
+              <Field
+                label={t("header")}
+                counter={`${(value.header ?? "").length}/${INTERACTIVE_LIMITS.headerTextMaxLength}`}
+              >
+                <Input
+                  value={value.header ?? ""}
+                  maxLength={INTERACTIVE_LIMITS.headerTextMaxLength}
+                  onChange={(e) => setField({ header: e.target.value })}
+                  className="bg-muted text-foreground"
+                />
+              </Field>
+              <Field
+                label={t("footer")}
+                counter={`${(value.footer ?? "").length}/${INTERACTIVE_LIMITS.footerMaxLength}`}
+              >
+                <Input
+                  value={value.footer ?? ""}
+                  maxLength={INTERACTIVE_LIMITS.footerMaxLength}
+                  onChange={(e) => setField({ footer: e.target.value })}
+                  className="bg-muted text-foreground"
+                />
+              </Field>
+            </div>
+          )}
 
           {value.kind === "buttons" ? (
             <ButtonsEditor value={value} onChange={onChange} advanced={advanced} />
-          ) : (
+          ) : value.kind === "list" ? (
             <ListEditor value={value} onChange={onChange} advanced={advanced} />
+          ) : value.kind === "cta_url" ? (
+            <div className="grid grid-cols-2 gap-2">
+              <Field label={t("buttonLabelPlaceholder")}>
+                <Input
+                  value={value.button_text}
+                  maxLength={INTERACTIVE_LIMITS.buttonTitleMaxLength}
+                  onChange={(e) => onChange({ ...value, button_text: e.target.value })}
+                  className="bg-muted text-foreground"
+                />
+              </Field>
+              <Field label={t("buttonUrlPlaceholder")}>
+                <Input
+                  type="url"
+                  value={value.button_url}
+                  onChange={(e) => onChange({ ...value, button_url: e.target.value })}
+                  className="bg-muted text-foreground"
+                />
+              </Field>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center border-t border-border py-2 text-sm font-medium text-primary">
+              <MapPin className="mr-1.5 h-3.5 w-3.5" />
+              {t("shareLocation")}
+            </div>
           )}
 
           <label className="flex items-center gap-2 text-xs text-muted-foreground">

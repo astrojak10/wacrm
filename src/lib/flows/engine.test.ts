@@ -30,6 +30,21 @@ const h = vi.hoisted(() => ({
       args: Parameters<typeof engineSendInteractiveList>[0],
     ) => Promise<{ whatsapp_message_id: string }>
   >(async () => ({ whatsapp_message_id: "wamid.4" })),
+  sendCtaUrl: vi.fn<
+    (
+      args: Parameters<typeof engineSendCtaUrl>[0],
+    ) => Promise<{ whatsapp_message_id: string }>
+  >(async () => ({ whatsapp_message_id: "wamid.5" })),
+  sendLocation: vi.fn<
+    (
+      args: Parameters<typeof engineSendLocation>[0],
+    ) => Promise<{ whatsapp_message_id: string }>
+  >(async () => ({ whatsapp_message_id: "wamid.LOC" })),
+  sendLocationRequest: vi.fn<
+    (
+      args: Parameters<typeof engineSendLocationRequest>[0],
+    ) => Promise<{ whatsapp_message_id: string }>
+  >(async () => ({ whatsapp_message_id: "wamid.LOCREQ" })),
 }));
 
 vi.mock("./admin-client", () => {
@@ -83,6 +98,9 @@ vi.mock("./meta-send", () => ({
   engineSendMedia: vi.fn(async () => ({ whatsapp_message_id: "wamid.2" })),
   engineSendInteractiveButtons: h.sendButtons,
   engineSendInteractiveList: h.sendList,
+  engineSendCtaUrl: h.sendCtaUrl,
+  engineSendLocation: h.sendLocation,
+  engineSendLocationRequest: h.sendLocationRequest,
 }));
 
 import {
@@ -93,12 +111,29 @@ import {
   isSuspending,
   isTerminal,
   evaluateConditionPredicate,
+  entryTriggerTexts,
 } from "./engine";
 import type {
+  engineSendCtaUrl,
+  engineSendLocation,
+  engineSendLocationRequest,
   engineSendInteractiveButtons,
   engineSendInteractiveList,
 } from "./meta-send";
 import type { ParsedInbound } from "./types";
+
+describe("entryTriggerTexts — locations", () => {
+  it("does not use raw coordinates as flow-entry keywords", () => {
+    expect(
+      entryTriggerTexts({
+        kind: "location",
+        latitude: 12.9716,
+        longitude: 77.5946,
+        meta_message_id: "m-loc",
+      }),
+    ).toEqual([]);
+  });
+});
 
 describe("matchReplyId", () => {
   it("returns null for nodes without options", () => {
@@ -567,6 +602,180 @@ describe("send_buttons / send_list interpolate {{vars.*}} (#553)", () => {
         ],
       },
     ]);
+  });
+
+  it("sends a send_message CTA URL and interpolates its text and URL", async () => {
+    h.state.nodes = [
+      {
+        id: "n1",
+        flow_id: "flow-1",
+        node_key: "ask_name",
+        node_type: "collect_input",
+        config: {
+          prompt_text: "What is your name?",
+          var_key: "name",
+          next_node_key: "pay_15_min",
+        },
+      },
+      {
+        id: "n2",
+        flow_id: "flow-1",
+        node_key: "pay_15_min",
+        node_type: "send_message",
+        config: {
+          text: "Thanks {{vars.name}}, proceed to payment.",
+          url_button: {
+            text: "Pay Now",
+            url: "https://pay.example.test/{{vars.name}}",
+          },
+          next_node_key: "done",
+        },
+      },
+      { id: "n3", flow_id: "flow-1", node_key: "done", node_type: "end", config: {} },
+    ];
+
+    await dispatch(text("Alice"));
+
+    expect(h.sendCtaUrl).toHaveBeenLastCalledWith({
+      accountId: "acct-1",
+      userId: "u-1",
+      conversationId: "cv-1",
+      contactId: "ct-1",
+      bodyText: "Thanks Alice, proceed to payment.",
+      buttonText: "Pay Now",
+      buttonUrl: "https://pay.example.test/Alice",
+    });
+  });
+
+  it("sends a location pin and auto-advances", async () => {
+    h.state.nodes = [
+      {
+        id: "n1",
+        flow_id: "flow-1",
+        node_key: "ask_name",
+        node_type: "collect_input",
+        config: {
+          prompt_text: "What is your name?",
+          var_key: "name",
+          next_node_key: "office",
+        },
+      },
+      {
+        id: "n2",
+        flow_id: "flow-1",
+        node_key: "office",
+        node_type: "send_location",
+        config: {
+          latitude: "12.9716",
+          longitude: "77.5946",
+          name: "{{vars.name}} Office",
+          address: "Bengaluru",
+          next_node_key: "done",
+        },
+      },
+      { id: "n3", flow_id: "flow-1", node_key: "done", node_type: "end", config: {} },
+    ];
+
+    await dispatch(text("Alice"));
+
+    expect(h.sendLocation).toHaveBeenLastCalledWith({
+      accountId: "acct-1",
+      userId: "u-1",
+      conversationId: "cv-1",
+      contactId: "ct-1",
+      latitude: 12.9716,
+      longitude: 77.5946,
+      name: "Alice Office",
+      address: "Bengaluru",
+    });
+  });
+
+  it("sends a location request and suspends on its node", async () => {
+    h.state.nodes = [
+      {
+        id: "n1",
+        flow_id: "flow-1",
+        node_key: "ask_name",
+        node_type: "collect_input",
+        config: {
+          prompt_text: "What is your name?",
+          var_key: "name",
+          next_node_key: "request_delivery",
+        },
+      },
+      {
+        id: "n2",
+        flow_id: "flow-1",
+        node_key: "request_delivery",
+        node_type: "request_location",
+        config: {
+          text: "Hi {{vars.name}}, share your delivery location.",
+          var_key: "delivery",
+          next_node_key: "done",
+        },
+      },
+      { id: "n3", flow_id: "flow-1", node_key: "done", node_type: "end", config: {} },
+    ];
+
+    const result = await dispatch(text("Alice"));
+
+    expect(result).toMatchObject({ consumed: true, outcome: "advanced" });
+    expect(h.sendLocationRequest).toHaveBeenLastCalledWith({
+      accountId: "acct-1",
+      userId: "u-1",
+      conversationId: "cv-1",
+      contactId: "ct-1",
+      bodyText: "Hi Alice, share your delivery location.",
+    });
+    expect(h.state.updates).toContainEqual(
+      expect.objectContaining({
+        table: "flow_runs",
+        row: expect.objectContaining({ current_node_key: "request_delivery" }),
+      }),
+    );
+  });
+
+  it("captures a location reply into prefixed flow variables", async () => {
+    h.state.activeRuns = [{ ...RUN, current_node_key: "request_delivery" }];
+    h.state.nodes = [
+      {
+        id: "n1",
+        flow_id: "flow-1",
+        node_key: "request_delivery",
+        node_type: "request_location",
+        config: {
+          text: "Share your location.",
+          var_key: "delivery",
+          next_node_key: "done",
+        },
+      },
+      { id: "n2", flow_id: "flow-1", node_key: "done", node_type: "end", config: {} },
+    ];
+
+    await dispatch({
+      kind: "location",
+      latitude: 12.9716,
+      longitude: 77.5946,
+      name: "Office",
+      address: "Bengaluru",
+      meta_message_id: "m-location",
+    });
+
+    expect(h.state.updates).toContainEqual(
+      expect.objectContaining({
+        table: "flow_runs",
+        row: {
+          vars: {
+            delivery_latitude: "12.9716",
+            delivery_longitude: "77.5946",
+            delivery_name: "Office",
+            delivery_address: "Bengaluru",
+          },
+          reprompt_count: 0,
+        },
+      }),
+    );
+    expect(JSON.stringify(h.state.events)).not.toContain("12.9716");
   });
 
   it("reprompt re-sends the interactive node with the same interpolation", async () => {

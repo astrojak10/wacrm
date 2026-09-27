@@ -22,6 +22,7 @@ import {
   Inbox,
   ListChecks,
   ListPlus,
+  MapPin,
   MessageCircle,
   Paperclip,
   PlayCircle,
@@ -46,6 +47,8 @@ export type NodeType =
   | 'send_buttons'
   | 'send_list'
   | 'send_media'
+  | 'send_location'
+  | 'request_location'
   | 'collect_input'
   | 'condition'
   | 'set_tag'
@@ -127,6 +130,18 @@ export const NODE_META: Record<
     color: 'text-cyan-400',
     category: 'messaging',
   },
+  send_location: {
+    slugSeed: 'Send location',
+    icon: MapPin,
+    color: 'text-emerald-400',
+    category: 'messaging',
+  },
+  request_location: {
+    slugSeed: 'Request location',
+    icon: MapPin,
+    color: 'text-teal-400',
+    category: 'messaging',
+  },
   collect_input: {
     slugSeed: 'Collect input',
     icon: Inbox,
@@ -192,6 +207,8 @@ const NODE_HUE: Record<NodeType, { l: number; c: number; h: number }> = {
   send_buttons: { l: 0.62, c: 0.16, h: 254 }, // cobalt
   send_list: { l: 0.62, c: 0.15, h: 277 }, // indigo
   send_media: { l: 0.65, c: 0.12, h: 210 }, // sky
+  send_location: { l: 0.66, c: 0.15, h: 150 }, // green
+  request_location: { l: 0.66, c: 0.12, h: 190 }, // teal
   collect_input: { l: 0.65, c: 0.1, h: 185 }, // teal — capture
   condition: { l: 0.72, c: 0.15, h: 65 }, // amber — a fork in the road
   set_tag: { l: 0.65, c: 0.15, h: 350 }, // pink
@@ -295,6 +312,21 @@ export function truncate(s: string, max = 80): string {
   return clean.slice(0, max - 1) + '…';
 }
 
+export function findHttpsLink(text: string): { fullMatch: string; url: string } | null {
+  const match = text.match(/https:\/\/[^\s<>"']+/i);
+  if (!match) return null;
+  const url = match[0].replace(/[),.!?;:]+$/, '');
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  return { fullMatch: match[0], url };
+}
+
 export function summarizeNode(
   node: BuilderNode,
   t?: (key: string, values?: Record<string, string | number>) => string
@@ -306,7 +338,17 @@ export function summarizeNode(
       return null;
     case 'send_message': {
       const text = typeof cfg.text === 'string' ? cfg.text : '';
-      return text.length > 0 ? truncate(text) : null;
+      const urlButton =
+        cfg.url_button && typeof cfg.url_button === 'object'
+          ? (cfg.url_button as { text?: unknown }).text
+          : '';
+      const buttonText = typeof urlButton === 'string' ? urlButton : '';
+      if (text.length > 0) {
+        return buttonText
+          ? `${truncate(text, 50)} · ${truncate(buttonText, 24)}`
+          : truncate(text);
+      }
+      return buttonText || null;
     }
     case 'send_buttons': {
       const text = typeof cfg.text === 'string' ? cfg.text : '';
@@ -358,6 +400,22 @@ export function summarizeNode(
       return caption
         ? `${label}: ${truncate(name, 30)} · ${truncate(caption, 40)}`
         : `${label}: ${truncate(name, 60)}`;
+    }
+    case 'send_location': {
+      const name = typeof cfg.name === 'string' ? cfg.name : '';
+      const address = typeof cfg.address === 'string' ? cfg.address : '';
+      const coordinates = `${cfg.latitude ?? ''}, ${cfg.longitude ?? ''}`.trim();
+      return [name, address, coordinates]
+        .filter(Boolean)
+        .map((part) => truncate(part, 32))
+        .join(' · ') || null;
+    }
+    case 'request_location': {
+      const text = typeof cfg.text === 'string' ? cfg.text : '';
+      const varKey = typeof cfg.var_key === 'string' ? cfg.var_key : 'location';
+      return text
+        ? `${truncate(text, 45)} · vars.${varKey}_latitude / ${varKey}_longitude`
+        : `vars.${varKey}_latitude / ${varKey}_longitude`;
     }
     case 'collect_input': {
       const prompt = typeof cfg.prompt_text === 'string' ? cfg.prompt_text : '';

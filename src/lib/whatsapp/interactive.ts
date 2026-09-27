@@ -68,9 +68,25 @@ export interface InteractiveListPayload {
   sections: InteractiveListSection[]
 }
 
+export interface InteractiveCtaUrlPayload {
+  kind: 'cta_url'
+  body: string
+  header?: string
+  footer?: string
+  button_text: string
+  button_url: string
+}
+
+export interface InteractiveLocationRequestPayload {
+  kind: 'location_request'
+  body: string
+}
+
 export type InteractiveMessagePayload =
   | InteractiveButtonsPayload
   | InteractiveListPayload
+  | InteractiveCtaUrlPayload
+  | InteractiveLocationRequestPayload
 
 export type InteractiveValidation =
   | { ok: true }
@@ -125,7 +141,12 @@ export function validateInteractivePayload(
       `Body text exceeds the ${INTERACTIVE_LIMITS.bodyMaxLength}-character limit.`,
     )
   }
-  const hf = validateHeaderFooter(p.header, p.footer)
+  const hf = p.kind === 'location_request'
+    ? ok()
+    : validateHeaderFooter(
+        (p as { header?: string; footer?: string }).header,
+        (p as { header?: string; footer?: string }).footer,
+      )
   if (!hf.ok) return hf
 
   if (p.kind === 'buttons') {
@@ -158,6 +179,26 @@ export function validateInteractivePayload(
     }
     return ok()
   }
+
+  if (p.kind === 'cta_url') {
+    const cta = p as InteractiveCtaUrlPayload
+    if (
+      typeof cta.button_text !== 'string' ||
+      cta.button_text.trim() === '' ||
+      cta.button_text.length > INTERACTIVE_LIMITS.buttonTitleMaxLength
+    ) {
+      return fail('CTA URL button needs a label of at most 20 characters.')
+    }
+    try {
+      const url = new URL(cta.button_url)
+      if (url.protocol === 'https:' && !url.username && !url.password) return ok()
+    } catch {
+      return fail('CTA URL button needs a valid HTTPS URL.')
+    }
+    return fail('CTA URL button needs a valid HTTPS URL.')
+  }
+
+  if (p.kind === 'location_request') return ok()
 
   if (p.kind === 'list') {
     const list = p as InteractiveListPayload
@@ -235,5 +276,8 @@ export function interactivePayloadPreviewText(
 ): string {
   const body = payload.body?.trim()
   if (body) return body
-  return payload.kind === 'buttons' ? '[buttons]' : '[list]'
+  if (payload.kind === 'buttons') return '[buttons]'
+  if (payload.kind === 'list') return '[list]'
+  if (payload.kind === 'location_request') return '[location request]'
+  return '[CTA URL]'
 }

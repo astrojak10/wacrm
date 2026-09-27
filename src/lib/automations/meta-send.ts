@@ -1,6 +1,8 @@
 import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import {
+  engineSendCtaUrl,
+  engineSendLocationRequest,
   engineSendInteractiveButtons,
   engineSendInteractiveList,
 } from '@/lib/flows/meta-send'
@@ -92,6 +94,22 @@ export async function engineSendInteractive(
       headerText: payload.header,
       footerText: payload.footer,
       buttons: payload.buttons,
+    })
+  }
+  if (payload.kind === 'cta_url') {
+    return engineSendCtaUrl({
+      ...common,
+      bodyText: payload.body,
+      buttonText: payload.button_text,
+      buttonUrl: payload.button_url,
+      headerText: payload.header,
+      footerText: payload.footer,
+    })
+  }
+  if (payload.kind === 'location_request') {
+    return engineSendLocationRequest({
+      ...common,
+      bodyText: payload.body,
     })
   }
   return engineSendInteractiveList({

@@ -37,6 +37,8 @@ export type FlowTemplateNodeType =
   | "send_list"
   | "collect_input"
   | "condition"
+  | "send_location"
+  | "request_location"
   | "set_tag"
   | "handoff"
   | "end";

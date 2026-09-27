@@ -159,6 +159,83 @@ describe("validateFlowForActivation — trigger", () => {
 });
 
 describe("validateFlowForActivation — nodes", () => {
+  it("validates location coordinates and request-variable prefixes", () => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "pin" } },
+      {
+        node_key: "pin",
+        node_type: "send_location",
+        config: {
+          latitude: "90.1",
+          longitude: "-181",
+          next_node_key: "request",
+        },
+      },
+      {
+        node_key: "request",
+        node_type: "request_location",
+        config: {
+          text: "Share your location.",
+          var_key: "delivery",
+          next_node_key: "done",
+        },
+      },
+      { node_key: "done", node_type: "end", config: {} },
+    ];
+    const issues = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "s" },
+      nodes,
+    );
+    expect(issues.some((issue) => issue.node_key === "pin" && issue.field === "latitude")).toBe(true);
+    expect(issues.some((issue) => issue.node_key === "pin" && issue.field === "longitude")).toBe(true);
+    expect(issues.some((issue) => issue.node_key === "request" && issue.field === "var_key")).toBe(false);
+  });
+
+  it("accepts a valid request-location node and its variable prefix", () => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "request" } },
+      {
+        node_key: "request",
+        node_type: "request_location",
+        config: {
+          text: "Share your location.",
+          var_key: "delivery",
+          next_node_key: "done",
+        },
+      },
+      { node_key: "done", node_type: "end", config: {} },
+    ];
+    expect(
+      validateFlowForActivation(
+        { ...validFlow, entry_node_id: "s" },
+        nodes,
+      ),
+    ).toEqual([]);
+  });
+
+  it("flags send_message CTA buttons without a valid HTTPS URL", () => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "pay" } },
+      {
+        node_key: "pay",
+        node_type: "send_message",
+        config: {
+          text: "Payment is ready.",
+          url_button: { text: "Pay Now", url: "http://example.com/pay" },
+          next_node_key: "done",
+        },
+      },
+      { node_key: "done", node_type: "end", config: {} },
+    ];
+    const issues = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "s" },
+      nodes,
+    );
+    expect(
+      issues.some((issue) => issue.node_key === "pay" && issue.field === "url_button.url"),
+    ).toBe(true);
+  });
+
   it("flags send_buttons without text", () => {
     const nodes = [
       { node_key: "s", node_type: "start", config: { next_node_key: "b" } },

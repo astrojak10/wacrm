@@ -889,6 +889,15 @@ async function processMessage(
             reply_title: contentText ?? '',
             meta_message_id: message.id,
           }
+        : message.type === 'location' && message.location
+          ? {
+              kind: 'location',
+              latitude: message.location.latitude,
+              longitude: message.location.longitude,
+              name: message.location.name,
+              address: message.location.address,
+              meta_message_id: message.id,
+            }
         : {
             kind: 'text',
             text: contentText ?? message.text?.body ?? '',

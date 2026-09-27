@@ -26,6 +26,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Link,
   Loader2,
   Paperclip,
   Plus,
@@ -47,7 +48,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { uploadAccountMedia, MEDIA_MAX_BYTES } from "@/lib/storage/upload-media";
-import { slugify, type BuilderNode } from "../shared";
+import { findHttpsLink, slugify, type BuilderNode } from "../shared";
 import { NextNodeRow, NodeKeySelect, TextRow } from "./fields";
 
 interface NodeConfigFormProps {
@@ -78,23 +79,95 @@ export function NodeConfigForm({
       );
 
     case "send_message":
-      return (
-        <>
-          <TextRow
-            label={t("textToCustomer")}
-            value={(cfg as { text?: string }).text ?? ""}
-            onChange={(v) => onUpdateConfig({ text: v })}
-            rows={3}
-          />
-          <NextNodeRow
-            value={(cfg as { next_node_key?: string }).next_node_key ?? ""}
-            allNodes={allNodes}
-            currentKey={node.node_key}
-            onChange={(v) => onUpdateConfig({ next_node_key: v })}
-            label={t("advancesTo")}
-          />
-        </>
-      );
+      {
+        const messageCfg = cfg as {
+          text?: string;
+          next_node_key?: string;
+          url_button?: { text?: string; url?: string };
+        };
+        const detectedLink = messageCfg.url_button
+          ? null
+          : findHttpsLink(messageCfg.text ?? "");
+        return (
+          <>
+            <TextRow
+              label={t("textToCustomer")}
+              value={messageCfg.text ?? ""}
+              onChange={(v) => onUpdateConfig({ text: v })}
+              rows={3}
+            />
+            {detectedLink && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  onUpdateConfig({
+                    text: (messageCfg.text ?? "")
+                      .replace(detectedLink.fullMatch, "")
+                      .replace(/:\s*$/, "")
+                      .trimEnd(),
+                    url_button: { text: "Pay Now", url: detectedLink.url },
+                  })
+                }
+              >
+                <Link className="mr-1.5 h-3.5 w-3.5" />
+                {t("moveLinkToButton")}
+              </Button>
+            )}
+            {messageCfg.url_button && (
+              <div className="space-y-2 rounded-md border border-border p-3">
+                <label className="block text-xs text-muted-foreground">
+                  {t("urlButtonText")}
+                </label>
+                <Input
+                  value={messageCfg.url_button.text ?? ""}
+                  maxLength={20}
+                  onChange={(e) =>
+                    onUpdateConfig({
+                      url_button: {
+                        ...messageCfg.url_button,
+                        text: e.target.value,
+                      },
+                    })
+                  }
+                />
+                <label className="block text-xs text-muted-foreground">
+                  {t("urlButtonLink")}
+                </label>
+                <Input
+                  type="url"
+                  value={messageCfg.url_button.url ?? ""}
+                  onChange={(e) =>
+                    onUpdateConfig({
+                      url_button: {
+                        ...messageCfg.url_button,
+                        url: e.target.value,
+                      },
+                    })
+                  }
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onUpdateConfig({ url_button: undefined })}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  {t("removeUrlButton")}
+                </Button>
+              </div>
+            )}
+            <NextNodeRow
+              value={messageCfg.next_node_key ?? ""}
+              allNodes={allNodes}
+              currentKey={node.node_key}
+              onChange={(v) => onUpdateConfig({ next_node_key: v })}
+              label={t("advancesTo")}
+            />
+          </>
+        );
+      }
 
     case "send_buttons":
       return (
@@ -130,6 +203,108 @@ export function NodeConfigForm({
           t={t}
         />
       );
+
+    case "send_location": {
+      const locationCfg = cfg as {
+        latitude?: string;
+        longitude?: string;
+        name?: string;
+        address?: string;
+        next_node_key?: string;
+      };
+      return (
+        <>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">
+                {t("latitude")}
+              </label>
+              <Input
+                type="number"
+                min={-90}
+                max={90}
+                step="any"
+                value={locationCfg.latitude ?? ""}
+                onChange={(e) => onUpdateConfig({ latitude: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">
+                {t("longitude")}
+              </label>
+              <Input
+                type="number"
+                min={-180}
+                max={180}
+                step="any"
+                value={locationCfg.longitude ?? ""}
+                onChange={(e) => onUpdateConfig({ longitude: e.target.value })}
+              />
+            </div>
+          </div>
+          <TextRow
+            label={t("locationName")}
+            value={locationCfg.name ?? ""}
+            onChange={(v) => onUpdateConfig({ name: v })}
+          />
+          <TextRow
+            label={t("locationAddress")}
+            value={locationCfg.address ?? ""}
+            onChange={(v) => onUpdateConfig({ address: v })}
+          />
+          <NextNodeRow
+            value={locationCfg.next_node_key ?? ""}
+            allNodes={allNodes}
+            currentKey={node.node_key}
+            onChange={(v) => onUpdateConfig({ next_node_key: v })}
+            label={t("advancesTo")}
+          />
+        </>
+      );
+    }
+
+    case "request_location": {
+      const requestCfg = cfg as {
+        text?: string;
+        var_key?: string;
+        next_node_key?: string;
+      };
+      return (
+        <>
+          <TextRow
+            label={t("locationRequestText")}
+            value={requestCfg.text ?? ""}
+            onChange={(v) => onUpdateConfig({ text: v })}
+            rows={3}
+          />
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">
+              {t("locationVarPrefix")}
+            </label>
+            <Input
+              value={requestCfg.var_key ?? "location"}
+              onChange={(e) =>
+                onUpdateConfig({
+                  var_key: e.target.value.replace(/[^a-zA-Z0-9_]/g, ""),
+                })
+              }
+              placeholder="delivery"
+              className="bg-muted font-mono text-xs"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("locationVarsHint")}
+            </p>
+          </div>
+          <NextNodeRow
+            value={requestCfg.next_node_key ?? ""}
+            allNodes={allNodes}
+            currentKey={node.node_key}
+            onChange={(v) => onUpdateConfig({ next_node_key: v })}
+            label={t("advanceAfterCapture")}
+          />
+        </>
+      );
+    }
 
     case "collect_input":
       return (

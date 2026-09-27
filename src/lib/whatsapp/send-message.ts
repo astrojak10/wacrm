@@ -25,6 +25,8 @@ import {
   sendTextMessage,
   sendTemplateMessage,
   sendMediaMessage,
+  sendCtaUrlMessage,
+  sendLocationRequestMessage,
   sendInteractiveButtons,
   sendInteractiveList,
   type MediaKind,
@@ -369,6 +371,30 @@ export async function sendMessageToConversation(
     }
     if (messageType === 'interactive') {
       const p = interactivePayload!;
+      if (p.kind === 'location_request') {
+        const result = await sendLocationRequestMessage({
+          phoneNumberId: config.phone_number_id,
+          accessToken,
+          to: phone,
+          bodyText: p.body,
+          contextMessageId,
+        });
+        return result.messageId;
+      }
+      if (p.kind === 'cta_url') {
+        const result = await sendCtaUrlMessage({
+          phoneNumberId: config.phone_number_id,
+          accessToken,
+          to: phone,
+          bodyText: p.body,
+          buttonText: p.button_text,
+          buttonUrl: p.button_url,
+          headerText: p.header || undefined,
+          footerText: p.footer || undefined,
+          contextMessageId,
+        });
+        return result.messageId;
+      }
       if (p.kind === 'buttons') {
         const result = await sendInteractiveButtons({
           phoneNumberId: config.phone_number_id,

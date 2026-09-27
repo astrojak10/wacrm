@@ -212,7 +212,11 @@ function validateNode(
     }
 
     case "send_message": {
-      const cfg = node.config as { text?: string; next_node_key?: string };
+      const cfg = node.config as {
+        text?: string;
+        next_node_key?: string;
+        url_button?: { text?: string; url?: string };
+      };
       if (!cfg.text?.trim()) {
         issues.push({
           severity: "error",
@@ -221,6 +225,41 @@ function validateNode(
           field: "text",
           message: "Send-message node needs a text body.",
         });
+      }
+      if (cfg.url_button) {
+        if (!cfg.url_button.text?.trim()) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "url_button.text",
+            message: "URL button needs a label.",
+          });
+        } else if (cfg.url_button.text.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "url_button.text",
+            message: `URL button label exceeds ${INTERACTIVE_LIMITS.buttonTitleMaxLength} chars.`,
+          });
+        }
+        let validUrl = false;
+        try {
+          const parsed = new URL(cfg.url_button.url ?? "");
+          validUrl = parsed.protocol === "https:" && !parsed.username && !parsed.password;
+        } catch {
+          validUrl = false;
+        }
+        if (!validUrl) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "url_button.url",
+            message: "URL button needs a valid HTTPS URL.",
+          });
+        }
       }
       if (!cfg.next_node_key) {
         issues.push({
@@ -296,6 +335,104 @@ function validateNode(
           node_key: node.node_key,
           field: "next_node_key",
           message: `Send-media points to non-existent node "${cfg.next_node_key}".`,
+        });
+      }
+      break;
+    }
+
+    case "send_location": {
+      const cfg = node.config as {
+        latitude?: string;
+        longitude?: string;
+        next_node_key?: string;
+      };
+      const latitude = Number(cfg.latitude);
+      const longitude = Number(cfg.longitude);
+      if (!cfg.latitude?.trim() || !Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "latitude",
+          message: "Send-location node needs a latitude between -90 and 90.",
+        });
+      }
+      if (!cfg.longitude?.trim() || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "longitude",
+          message: "Send-location node needs a longitude between -180 and 180.",
+        });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: "Send-location node must point to a next node.",
+        });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: `Send-location points to non-existent node "${cfg.next_node_key}".`,
+        });
+      }
+      break;
+    }
+
+    case "request_location": {
+      const cfg = node.config as {
+        text?: string;
+        var_key?: string;
+        next_node_key?: string;
+      };
+      if (!cfg.text?.trim()) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "text",
+          message: "Request-location node needs a prompt.",
+        });
+      } else if (cfg.text.length > INTERACTIVE_LIMITS.bodyMaxLength) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "text",
+          message: `Location request exceeds ${INTERACTIVE_LIMITS.bodyMaxLength} chars.`,
+        });
+      }
+      if (!cfg.var_key || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(cfg.var_key)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "var_key",
+          message: "Request-location node needs a valid variable prefix.",
+        });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: "Request-location node must point to a next node.",
+        });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: `Request-location points to non-existent node "${cfg.next_node_key}".`,
         });
       }
       break;
@@ -750,6 +887,8 @@ function outgoingEdges(node: NodeInput): string[] {
     case "start":
     case "send_message":
     case "send_media":
+    case "send_location":
+    case "request_location":
     case "collect_input":
     case "set_tag": {
       const cfg = node.config as { next_node_key?: string };
