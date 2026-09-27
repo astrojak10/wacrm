@@ -17,6 +17,7 @@
  */
 
 import {
+  CreditCard,
   Flag,
   GitFork,
   Inbox,
@@ -52,6 +53,7 @@ export type NodeType =
   | 'collect_input'
   | 'condition'
   | 'set_tag'
+  | 'razorpay_payment'
   | 'handoff'
   | 'end';
 
@@ -160,6 +162,12 @@ export const NODE_META: Record<
     color: 'text-pink-400',
     category: 'logic',
   },
+  razorpay_payment: {
+    slugSeed: 'Razorpay payment',
+    icon: CreditCard,
+    color: 'text-green-400',
+    category: 'messaging',
+  },
   handoff: {
     slugSeed: 'Handoff to agent',
     icon: UserPlus,
@@ -212,6 +220,7 @@ const NODE_HUE: Record<NodeType, { l: number; c: number; h: number }> = {
   collect_input: { l: 0.65, c: 0.1, h: 185 }, // teal — capture
   condition: { l: 0.72, c: 0.15, h: 65 }, // amber — a fork in the road
   set_tag: { l: 0.65, c: 0.15, h: 350 }, // pink
+  razorpay_payment: { l: 0.65, c: 0.14, h: 145 }, // green
   handoff: { l: 0.65, c: 0.17, h: 16 }, // rose — hands off
   end: { l: 0.55, c: 0.01, h: 260 }, // neutral grey — terminal
 };
@@ -349,6 +358,11 @@ export function summarizeNode(
           : truncate(text);
       }
       return buttonText || null;
+    }
+    case 'razorpay_payment': {
+      const text = typeof cfg.message_text === 'string' ? cfg.message_text : '';
+      const amount = typeof cfg.amount === 'number' ? `INR ${cfg.amount}` : '';
+      return [text ? truncate(text, 44) : '', amount].filter(Boolean).join(' · ') || null;
     }
     case 'send_buttons': {
       const text = typeof cfg.text === 'string' ? cfg.text : '';

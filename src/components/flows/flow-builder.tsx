@@ -585,6 +585,7 @@ function AddNodeButton({ onAdd, t }: { onAdd: (type: NodeType) => void; t: Retur
     'send_buttons',
     'send_list',
     'send_message',
+    'razorpay_payment',
     'send_media',
     'send_location',
     'request_location',

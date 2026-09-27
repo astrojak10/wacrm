@@ -92,6 +92,7 @@ describe("defaultConfigFor", () => {
     "collect_input",
     "condition",
     "set_tag",
+    "razorpay_payment",
     "handoff",
     "end",
   ];
@@ -129,6 +130,17 @@ describe("defaultConfigFor", () => {
       longitude?: string;
     };
     expect(cfg).toEqual(expect.objectContaining({ latitude: "", longitude: "" }));
+  });
+
+  it("Razorpay payment defaults to a valid INR amount and separate branch targets", () => {
+    expect(defaultConfigFor("razorpay_payment")).toEqual({
+      message_text: "",
+      button_text: "Pay now",
+      amount: 49,
+      description: "",
+      success_next: "",
+      failure_next: "",
+    });
   });
 
   it("request_location has a valid default variable prefix", () => {

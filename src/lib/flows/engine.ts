@@ -46,6 +46,12 @@ import { decideFallback, resolveFallbackPolicy } from "./fallback";
 import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
 import { removeContactTag } from "@/lib/contacts/tag-write";
 import {
+  cancelRazorpayPaymentLink,
+  createRazorpayPaymentLink,
+  rupeesToPaise,
+  type RazorpayPaymentLink,
+} from "./razorpay";
+import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
   type DispatchInboundInput,
@@ -55,6 +61,7 @@ import {
   type FlowRunRow,
   type ParsedInbound,
   type RequestLocationNodeConfig,
+  type RazorpayPaymentNodeConfig,
   type SendButtonsNodeConfig,
   type SendLocationNodeConfig,
   type SendListNodeConfig,
@@ -157,7 +164,8 @@ export function isSuspending(node_type: string): boolean {
     node_type === "send_buttons" ||
     node_type === "send_list" ||
     node_type === "request_location" ||
-    node_type === "collect_input"
+    node_type === "collect_input" ||
+    node_type === "razorpay_payment"
   );
 }
 
@@ -713,6 +721,64 @@ async function advanceFromNodeKey(
       currentKey = cfg.next_node_key;
       continue;
     }
+    if (node.node_type === "razorpay_payment") {
+      const cfg = node.config as unknown as RazorpayPaymentNodeConfig;
+      let paymentLink: RazorpayPaymentLink | null = null;
+      try {
+        paymentLink = await createRazorpayPaymentLink({
+          amount: cfg.amount,
+          description: interpolateVars(cfg.description, run.vars),
+          flowRunId: run.id,
+          nodeKey: node.node_key,
+        });
+        const url = new URL(paymentLink.short_url);
+        if (url.protocol !== "https:" || url.username || url.password) {
+          throw new Error("Razorpay returned an invalid payment URL.");
+        }
+        const suspended = await advanceCurrentNodeKey(
+          db,
+          run.id,
+          run.current_node_key,
+          node.node_key,
+          { razorpay_payment_link_id: paymentLink.id },
+        );
+        if (!suspended) {
+          throw new Error("Could not suspend the flow on its payment node.");
+        }
+        const { whatsapp_message_id } = await engineSendCtaUrl({
+          accountId: run.account_id,
+          userId: run.user_id,
+          conversationId: run.conversation_id!,
+          contactId: run.contact_id!,
+          bodyText: interpolateVars(cfg.message_text, run.vars),
+          buttonText: interpolateVars(cfg.button_text, run.vars),
+          buttonUrl: paymentLink.short_url,
+        });
+        await logEvent(db, run.id, "message_sent", node.node_key, {
+          node_type: "razorpay_payment",
+          whatsapp_message_id,
+          payment_link_id: paymentLink.id,
+        });
+      } catch (err) {
+        if (paymentLink?.id) {
+          try {
+            await cancelRazorpayPaymentLink(paymentLink.id);
+          } catch (cancelErr) {
+            console.error(
+              "[flows] failed to cancel an unsent Razorpay payment link:",
+              cancelErr instanceof Error ? cancelErr.message : cancelErr,
+            );
+          }
+        }
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "razorpay_payment_start_failed",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        await endRun(db, run.id, "failed", "razorpay_payment_start_failed");
+        return { outcome: "completed" };
+      }
+      return { outcome: "advanced" };
+    }
     if (node.node_type === "send_media") {
       const cfg = node.config as unknown as SendMediaNodeConfig;
       try {
@@ -990,6 +1056,7 @@ async function advanceCurrentNodeKey(
   runId: string,
   expectedOldKey: string | null,
   newKey: string,
+  extraPatch: Record<string, unknown> = {},
 ): Promise<boolean> {
   // PostgREST: when expectedOldKey is null we can't `.eq` (would match
   // any row); use `.is('current_node_key', null)` instead.
@@ -998,6 +1065,7 @@ async function advanceCurrentNodeKey(
     .update({
       current_node_key: newKey,
       last_advanced_at: new Date().toISOString(),
+      ...extraPatch,
     })
     .eq("id", runId)
     .eq("status", "active");
@@ -1071,6 +1139,101 @@ export async function dispatchInboundToFlows(
     );
     return { consumed: false, outcome: "no_match" };
   }
+}
+
+/** Resume a suspended payment node only from a server-fetched Razorpay link. */
+export async function resumeRazorpayPayment(
+  paymentLink: RazorpayPaymentLink,
+): Promise<"advanced" | "ignored" | "pending"> {
+  const flowRunId = paymentLink.notes?.wacrm_flow_run_id;
+  const nodeKey = paymentLink.notes?.wacrm_node_key;
+  if (!flowRunId || !nodeKey) return "ignored";
+  if (paymentLink.status !== "paid" &&
+      paymentLink.status !== "cancelled" &&
+      paymentLink.status !== "expired") {
+    return "pending";
+  }
+
+  const db = supabaseAdmin();
+  const { data, error } = await db
+    .from("flow_runs")
+    .select("*")
+    .eq("id", flowRunId)
+    .maybeSingle();
+  if (error) throw new Error(`Unable to load payment flow run: ${error.message}`);
+  const run = data as FlowRunRow | null;
+  if (
+    !run ||
+    run.status !== "active" ||
+    run.current_node_key !== nodeKey ||
+    run.razorpay_payment_link_id !== paymentLink.id
+  ) {
+    return "ignored";
+  }
+
+  const nodes = await loadAllNodes(db, run.flow_id);
+  const node = nodes.get(nodeKey);
+  if (!node || node.node_type !== "razorpay_payment") return "ignored";
+  const cfg = node.config as unknown as RazorpayPaymentNodeConfig;
+  let expectedAmount: number;
+  try {
+    expectedAmount = rupeesToPaise(cfg.amount);
+  } catch {
+    await logEvent(db, run.id, "error", nodeKey, {
+      reason: "razorpay_payment_config_invalid",
+      payment_link_id: paymentLink.id,
+    });
+    return "ignored";
+  }
+  if (
+    paymentLink.currency !== "INR" ||
+    paymentLink.amount !== expectedAmount ||
+    (paymentLink.status === "paid" &&
+      paymentLink.amount_paid !== paymentLink.amount)
+  ) {
+    await logEvent(db, run.id, "error", nodeKey, {
+      reason: "razorpay_payment_details_mismatch",
+      payment_link_id: paymentLink.id,
+      expected_amount: expectedAmount,
+      actual_amount: paymentLink.amount,
+      currency: paymentLink.currency,
+    });
+    return "ignored";
+  }
+
+  const target = paymentLink.status === "paid"
+    ? cfg.success_next
+    : cfg.failure_next;
+  if (!target || !nodes.has(target)) {
+    throw new Error("Razorpay payment node has an invalid branch target.");
+  }
+
+  const { data: updated, error: updateError } = await db
+    .from("flow_runs")
+    .update({
+      current_node_key: target,
+      last_advanced_at: new Date().toISOString(),
+      razorpay_payment_link_id: null,
+    })
+    .eq("id", run.id)
+    .eq("status", "active")
+    .eq("current_node_key", nodeKey)
+    .eq("razorpay_payment_link_id", paymentLink.id)
+    .select("id");
+  if (updateError) {
+    throw new Error(`Unable to advance payment flow run: ${updateError.message}`);
+  }
+  if (!Array.isArray(updated) || updated.length === 0) return "ignored";
+
+  await logEvent(db, run.id, "node_entered", nodeKey, {
+    payment_status: paymentLink.status,
+    payment_link_id: paymentLink.id,
+    advancing_to: target,
+  });
+  run.current_node_key = target;
+  run.razorpay_payment_link_id = null;
+  await advanceFromNodeKey(db, run, target, nodes);
+  return "advanced";
 }
 
 async function handleReplyForActiveRun(

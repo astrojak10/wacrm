@@ -169,6 +169,73 @@ export function NodeConfigForm({
         );
       }
 
+    case "razorpay_payment": {
+      const paymentCfg = cfg as {
+        message_text?: string;
+        button_text?: string;
+        amount?: number;
+        description?: string;
+        success_next?: string;
+        failure_next?: string;
+      };
+      return (
+        <>
+          <TextRow
+            label={t("textToCustomer")}
+            value={paymentCfg.message_text ?? ""}
+            onChange={(v) => onUpdateConfig({ message_text: v })}
+            rows={3}
+          />
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">
+              {t("paymentButton")}
+            </label>
+            <Input
+              value={paymentCfg.button_text ?? ""}
+              maxLength={20}
+              onChange={(e) => onUpdateConfig({ button_text: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">
+              {t("paymentAmount")}
+            </label>
+            <Input
+              type="number"
+              min={1}
+              step="0.01"
+              value={paymentCfg.amount ?? ""}
+              onChange={(e) =>
+                onUpdateConfig({
+                  amount: e.target.value === "" ? undefined : Number(e.target.value),
+                })
+              }
+            />
+          </div>
+          <TextRow
+            label={t("paymentDescription")}
+            value={paymentCfg.description ?? ""}
+            onChange={(v) => onUpdateConfig({ description: v })}
+            rows={2}
+          />
+          <NextNodeRow
+            value={paymentCfg.success_next ?? ""}
+            allNodes={allNodes}
+            currentKey={node.node_key}
+            onChange={(v) => onUpdateConfig({ success_next: v })}
+            label={t("paymentSuccess")}
+          />
+          <NextNodeRow
+            value={paymentCfg.failure_next ?? ""}
+            allNodes={allNodes}
+            currentKey={node.node_key}
+            onChange={(v) => onUpdateConfig({ failure_next: v })}
+            label={t("paymentFailure")}
+          />
+        </>
+      );
+    }
+
     case "send_buttons":
       return (
         <SendButtonsForm

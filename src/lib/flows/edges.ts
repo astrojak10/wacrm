@@ -87,6 +87,28 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
         break;
       }
 
+      case "razorpay_payment": {
+        const paymentCfg = cfg as {
+          success_next?: string;
+          failure_next?: string;
+        };
+        for (const [handle, target] of [
+          ["success", paymentCfg.success_next],
+          ["failure", paymentCfg.failure_next],
+        ] as const) {
+          if (target && knownKeys.has(target)) {
+            edges.push({
+              id: `${node.node_key}--${handle}--${target}`,
+              source: node.node_key,
+              target,
+              sourceHandle: handle,
+              label: handle,
+            });
+          }
+        }
+        break;
+      }
+
       case "send_buttons": {
         const buttons = Array.isArray(
           (cfg as { buttons?: unknown }).buttons,
@@ -185,6 +207,12 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
     case "request_location":
       return [{ id: "next", label: "Next" }];
 
+    case "razorpay_payment":
+      return [
+        { id: "success", label: "success" },
+        { id: "failure", label: "failure" },
+      ];
+
     case "condition":
       return [
         { id: "true", label: "true" },
@@ -260,6 +288,11 @@ export function applyEdgeConnection(
     case "send_location":
     case "request_location":
       if (sourceHandle === "next") return { next_node_key: targetKey };
+      return null;
+
+    case "razorpay_payment":
+      if (sourceHandle === "success") return { success_next: targetKey };
+      if (sourceHandle === "failure") return { failure_next: targetKey };
       return null;
 
     case "condition":
@@ -358,6 +391,18 @@ function patchedConfigWithoutKey(
       const next = (cfg as { next_node_key?: string }).next_node_key;
       if (next !== deletedKey) return null;
       return { ...cfg, next_node_key: "" };
+    }
+
+    case "razorpay_payment": {
+      const c = cfg as { success_next?: string; failure_next?: string };
+      const successMatch = c.success_next === deletedKey;
+      const failureMatch = c.failure_next === deletedKey;
+      if (!successMatch && !failureMatch) return null;
+      return {
+        ...cfg,
+        ...(successMatch ? { success_next: "" } : {}),
+        ...(failureMatch ? { failure_next: "" } : {}),
+      };
     }
 
     case "condition": {

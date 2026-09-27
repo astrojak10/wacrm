@@ -193,6 +193,16 @@ export interface SetTagNodeConfig {
   next_node_key: string;
 }
 
+export interface RazorpayPaymentNodeConfig {
+  message_text: string;
+  button_text: string;
+  /** Amount in INR, with at most two decimal places. */
+  amount: number;
+  description: string;
+  success_next: string;
+  failure_next: string;
+}
+
 // Terminal nodes carry no config — they just stop the run.
 export type EndNodeConfig = Record<string, never>;
 
@@ -215,6 +225,7 @@ export type FlowNodeConfig =
   | { node_type: "collect_input"; config: CollectInputNodeConfig }
   | { node_type: "condition"; config: ConditionNodeConfig }
   | { node_type: "set_tag"; config: SetTagNodeConfig }
+  | { node_type: "razorpay_payment"; config: RazorpayPaymentNodeConfig }
   | { node_type: "handoff"; config: HandoffNodeConfig }
   | { node_type: "end"; config: EndNodeConfig };
 
@@ -295,6 +306,8 @@ export interface FlowRunRow {
     | "failed";
   current_node_key: string | null;
   last_prompt_message_id: string | null;
+  /** Current Razorpay attempt, cleared after its verified outcome. */
+  razorpay_payment_link_id?: string | null;
   vars: Record<string, unknown>;
   reprompt_count: number;
   started_at: string;

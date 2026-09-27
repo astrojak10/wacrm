@@ -174,6 +174,54 @@ describe("deriveCanvasEdges — condition (true/false branches)", () => {
   });
 });
 
+describe("deriveCanvasEdges — Razorpay success/failure branches", () => {
+  it("derives labeled branches and supports canvas connections and deletion cleanup", () => {
+    const payment: BuilderNode = {
+      node_key: "pay_15_min",
+      node_type: "razorpay_payment",
+      config: {
+        amount: 49,
+        success_next: "paid",
+        failure_next: "failed",
+      },
+    };
+    const graph = [
+      payment,
+      { node_key: "paid", node_type: "end", config: {} },
+      { node_key: "failed", node_type: "end", config: {} },
+    ] satisfies BuilderNode[];
+
+    expect(deriveCanvasEdges(graph)).toEqual([
+      expect.objectContaining({
+        source: "pay_15_min",
+        target: "paid",
+        sourceHandle: "success",
+        label: "success",
+      }),
+      expect.objectContaining({
+        source: "pay_15_min",
+        target: "failed",
+        sourceHandle: "failure",
+        label: "failure",
+      }),
+    ]);
+    expect(outgoingSlots(payment).map((slot) => slot.id)).toEqual([
+      "success",
+      "failure",
+    ]);
+    expect(applyEdgeConnection(payment, "success", "next_paid")).toEqual({
+      success_next: "next_paid",
+    });
+    expect(applyEdgeConnection(payment, "failure", "next_failed")).toEqual({
+      failure_next: "next_failed",
+    });
+    expect(unlinkNodeReferences(graph, "failed")[0].config).toMatchObject({
+      failure_next: "",
+      success_next: "paid",
+    });
+  });
+});
+
 describe("deriveCanvasEdges — send_buttons (per-button)", () => {
   it("emits one edge per button, labeled with the button title", () => {
     const edges = deriveCanvasEdges(

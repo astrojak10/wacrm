@@ -281,6 +281,77 @@ function validateNode(
       break;
     }
 
+    case "razorpay_payment": {
+      const cfg = node.config as {
+        message_text?: string;
+        button_text?: string;
+        amount?: number;
+        success_next?: string;
+        failure_next?: string;
+      };
+      if (!cfg.message_text?.trim()) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "message_text",
+          message: "Razorpay payment needs a message body.",
+        });
+      }
+      if (!cfg.button_text?.trim()) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "button_text",
+          message: "Razorpay payment needs a button label.",
+        });
+      } else if (cfg.button_text.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "button_text",
+          message: `URL button label exceeds ${INTERACTIVE_LIMITS.buttonTitleMaxLength} chars.`,
+        });
+      }
+      if (
+        typeof cfg.amount !== "number" ||
+        !Number.isFinite(cfg.amount) ||
+        cfg.amount < 1 ||
+        !/^\d+(\.\d{1,2})?$/.test(String(cfg.amount))
+      ) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "amount",
+          message: "Payment amount must be at least INR 1.00 with up to two decimal places.",
+        });
+      }
+      for (const branch of ["success_next", "failure_next"] as const) {
+        const key = cfg[branch];
+        if (!key) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: branch,
+            message: `Razorpay payment needs a ${branch === "success_next" ? "success" : "failure"} target.`,
+          });
+        } else if (!knownKeys.has(key)) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: branch,
+            message: `Razorpay payment points to non-existent node "${key}".`,
+          });
+        }
+      }
+      break;
+    }
+
     case "send_media": {
       const cfg = node.config as {
         media_type?: "image" | "video" | "document";
@@ -903,6 +974,15 @@ function outgoingEdges(node: NodeInput): string[] {
       if (cfg.true_next) out.push(cfg.true_next);
       if (cfg.false_next) out.push(cfg.false_next);
       return out;
+    }
+    case "razorpay_payment": {
+      const cfg = node.config as {
+        success_next?: string;
+        failure_next?: string;
+      };
+      return [cfg.success_next, cfg.failure_next].filter(
+        (key): key is string => !!key,
+      );
     }
     case "send_buttons": {
       const cfg = node.config as {

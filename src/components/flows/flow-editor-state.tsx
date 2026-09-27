@@ -140,6 +140,15 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
       return { next_node_key: "" };
     case "send_message":
       return { text: "", next_node_key: "" };
+    case "razorpay_payment":
+      return {
+        message_text: "",
+        button_text: "Pay now",
+        amount: 49,
+        description: "",
+        success_next: "",
+        failure_next: "",
+      };
     case "send_buttons":
       return {
         text: "",

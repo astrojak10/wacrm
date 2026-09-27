@@ -45,6 +45,19 @@ const h = vi.hoisted(() => ({
       args: Parameters<typeof engineSendLocationRequest>[0],
     ) => Promise<{ whatsapp_message_id: string }>
   >(async () => ({ whatsapp_message_id: "wamid.LOCREQ" })),
+  createPaymentLink: vi.fn(async (args: { flowRunId: string; nodeKey: string }) => ({
+    id: "plink_test",
+    short_url: "https://rzp.io/test",
+    status: "created" as const,
+    amount: 4900,
+    amount_paid: 0,
+    currency: "INR",
+    notes: {
+      wacrm_flow_run_id: args.flowRunId,
+      wacrm_node_key: args.nodeKey,
+    },
+  })),
+  cancelPaymentLink: vi.fn(async () => ({})),
 }));
 
 vi.mock("./admin-client", () => {
@@ -103,8 +116,17 @@ vi.mock("./meta-send", () => ({
   engineSendLocationRequest: h.sendLocationRequest,
 }));
 
+vi.mock("./razorpay", () => ({
+  createRazorpayPaymentLink: (...args: unknown[]) =>
+    (h.createPaymentLink as (...values: unknown[]) => unknown)(...args),
+  cancelRazorpayPaymentLink: (...args: unknown[]) =>
+    (h.cancelPaymentLink as (...values: unknown[]) => unknown)(...args),
+  rupeesToPaise: (amount: number) => Math.round(amount * 100),
+}));
+
 import {
   dispatchInboundToFlows,
+  resumeRazorpayPayment,
   matchReplyId,
   matchesKeywordTrigger,
   isAutoAdvancing,
@@ -288,6 +310,7 @@ describe("node classification helpers", () => {
     expect(isSuspending("send_buttons")).toBe(true);
     expect(isSuspending("send_list")).toBe(true);
     expect(isSuspending("collect_input")).toBe(true);
+    expect(isSuspending("razorpay_payment")).toBe(true);
     expect(isSuspending("start")).toBe(false);
     expect(isSuspending("send_message")).toBe(false);
     expect(isSuspending("condition")).toBe(false);
@@ -312,6 +335,7 @@ describe("node classification helpers", () => {
       "send_list",
       "send_media",
       "collect_input",
+      "razorpay_payment",
       "condition",
       "set_tag",
       "handoff",
@@ -829,6 +853,250 @@ describe("send_buttons / send_list interpolate {{vars.*}} (#553)", () => {
         row: expect.objectContaining({
           status: "failed",
           end_reason: "send_buttons_failed",
+        }),
+      }),
+    );
+  });
+
+  it("creates a run-scoped Razorpay link, sends its CTA, and suspends on the payment node", async () => {
+    h.state.activeRuns = [{ ...RUN, vars: {} }];
+    h.state.flows = [FLOW];
+    h.state.nodes = [
+      {
+        id: "n1",
+        flow_id: "flow-1",
+        node_key: "ask_name",
+        node_type: "collect_input",
+        config: {
+          prompt_text: "What is your name?",
+          var_key: "name",
+          next_node_key: "pay_15_min",
+        },
+      },
+      {
+        id: "n2",
+        flow_id: "flow-1",
+        node_key: "pay_15_min",
+        node_type: "razorpay_payment",
+        config: {
+          message_text: "Thanks {{vars.name}}, pay for your consultation.",
+          button_text: "Pay INR 49",
+          amount: 49,
+          description: "Consultation for {{vars.name}}",
+          success_next: "payment_success",
+          failure_next: "payment_failed",
+        },
+      },
+      { id: "n3", flow_id: "flow-1", node_key: "payment_success", node_type: "end", config: {} },
+      { id: "n4", flow_id: "flow-1", node_key: "payment_failed", node_type: "end", config: {} },
+    ];
+    h.state.events = [];
+    h.state.updates = [];
+    h.createPaymentLink.mockClear();
+    h.sendCtaUrl.mockClear();
+
+    await dispatch(text("Alice"));
+
+    expect(h.createPaymentLink).toHaveBeenCalledWith({
+      amount: 49,
+      description: "Consultation for Alice",
+      flowRunId: "run-1",
+      nodeKey: "pay_15_min",
+    });
+    expect(h.sendCtaUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bodyText: "Thanks Alice, pay for your consultation.",
+        buttonText: "Pay INR 49",
+        buttonUrl: "https://rzp.io/test",
+      }),
+    );
+    expect(h.state.updates).toContainEqual(
+      expect.objectContaining({
+        table: "flow_runs",
+        row: expect.objectContaining({
+          current_node_key: "pay_15_min",
+          razorpay_payment_link_id: "plink_test",
+        }),
+      }),
+    );
+  });
+
+  it.each([
+    ["paid", "payment_success"],
+    ["cancelled", "payment_failed"],
+    ["expired", "payment_failed"],
+  ] as const)("routes a verified %s link to %s", async (status, target) => {
+    h.state.activeRuns = [{
+      ...RUN,
+      current_node_key: "pay_15_min",
+      razorpay_payment_link_id: "plink_test",
+    }];
+    h.state.nodes = [
+      {
+        id: "n2",
+        flow_id: "flow-1",
+        node_key: "pay_15_min",
+        node_type: "razorpay_payment",
+        config: {
+          amount: 49,
+          success_next: "payment_success",
+          failure_next: "payment_failed",
+        },
+      },
+      { id: "n3", flow_id: "flow-1", node_key: "payment_success", node_type: "end", config: {} },
+      { id: "n4", flow_id: "flow-1", node_key: "payment_failed", node_type: "end", config: {} },
+    ];
+    h.state.events = [];
+    h.state.updates = [];
+
+    const result = await resumeRazorpayPayment({
+      id: "plink_test",
+      short_url: "https://rzp.io/test",
+      status,
+      amount: 4900,
+      amount_paid: status === "paid" ? 4900 : 0,
+      currency: "INR",
+      notes: { wacrm_flow_run_id: "run-1", wacrm_node_key: "pay_15_min" },
+    });
+
+    expect(result).toBe("advanced");
+    expect(h.state.updates[0]).toMatchObject({
+      table: "flow_runs",
+      row: { current_node_key: target },
+    });
+  });
+
+  it("continues into a suspending success branch after verified payment", async () => {
+    h.state.activeRuns = [{
+      ...RUN,
+      current_node_key: "pay_15_min",
+      razorpay_payment_link_id: "plink_test",
+    }];
+    h.state.nodes = [
+      {
+        id: "n2",
+        flow_id: "flow-1",
+        node_key: "pay_15_min",
+        node_type: "razorpay_payment",
+        config: { amount: 49, success_next: "followup", failure_next: "failed" },
+      },
+      {
+        id: "n3",
+        flow_id: "flow-1",
+        node_key: "followup",
+        node_type: "send_buttons",
+        config: {
+          text: "Payment received. Choose a time.",
+          buttons: [{ reply_id: "morning", title: "Morning", next_node_key: "done" }],
+        },
+      },
+      { id: "n4", flow_id: "flow-1", node_key: "failed", node_type: "end", config: {} },
+      { id: "n5", flow_id: "flow-1", node_key: "done", node_type: "end", config: {} },
+    ];
+    h.state.events = [];
+    h.state.updates = [];
+    h.sendButtons.mockClear();
+
+    const result = await resumeRazorpayPayment({
+      id: "plink_test",
+      short_url: "https://rzp.io/test",
+      status: "paid",
+      amount: 4900,
+      amount_paid: 4900,
+      currency: "INR",
+      notes: { wacrm_flow_run_id: "run-1", wacrm_node_key: "pay_15_min" },
+    });
+
+    expect(result).toBe("advanced");
+    expect(h.sendButtons).toHaveBeenCalledOnce();
+    expect(h.sendButtons).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bodyText: "Payment received. Choose a time.",
+      }),
+    );
+  });
+
+  it("ignores duplicate payment callbacks after the run has left its payment node", async () => {
+    h.state.activeRuns = [{ ...RUN, current_node_key: "payment_success" }];
+    h.state.nodes = [];
+    h.state.updates = [];
+
+    const result = await resumeRazorpayPayment({
+      id: "plink_test",
+      short_url: "https://rzp.io/test",
+      status: "paid",
+      amount: 4900,
+      amount_paid: 4900,
+      currency: "INR",
+      notes: { wacrm_flow_run_id: "run-1", wacrm_node_key: "pay_15_min" },
+    });
+
+    expect(result).toBe("ignored");
+    expect(h.state.updates).toEqual([]);
+  });
+
+  it("ignores an earlier link callback when the same node has a newer attempt", async () => {
+    h.state.activeRuns = [{
+      ...RUN,
+      current_node_key: "pay_15_min",
+      razorpay_payment_link_id: "plink_new_attempt",
+    }];
+    h.state.nodes = [];
+    h.state.updates = [];
+
+    const result = await resumeRazorpayPayment({
+      id: "plink_test",
+      short_url: "https://rzp.io/test",
+      status: "paid",
+      amount: 4900,
+      amount_paid: 4900,
+      currency: "INR",
+      notes: { wacrm_flow_run_id: "run-1", wacrm_node_key: "pay_15_min" },
+    });
+
+    expect(result).toBe("ignored");
+    expect(h.state.updates).toEqual([]);
+  });
+
+  it("logs and ignores a link whose amount does not match the configured payment", async () => {
+    h.state.activeRuns = [{
+      ...RUN,
+      current_node_key: "pay_15_min",
+      razorpay_payment_link_id: "plink_test",
+    }];
+    h.state.nodes = [
+      {
+        id: "n2",
+        flow_id: "flow-1",
+        node_key: "pay_15_min",
+        node_type: "razorpay_payment",
+        config: {
+          amount: 49,
+          success_next: "payment_success",
+          failure_next: "payment_failed",
+        },
+      },
+    ];
+    h.state.events = [];
+    h.state.updates = [];
+
+    const result = await resumeRazorpayPayment({
+      id: "plink_test",
+      short_url: "https://rzp.io/test",
+      status: "paid",
+      amount: 4901,
+      amount_paid: 4901,
+      currency: "INR",
+      notes: { wacrm_flow_run_id: "run-1", wacrm_node_key: "pay_15_min" },
+    });
+
+    expect(result).toBe("ignored");
+    expect(h.state.updates).toEqual([]);
+    expect(h.state.events).toContainEqual(
+      expect.objectContaining({
+        event_type: "error",
+        payload: expect.objectContaining({
+          reason: "razorpay_payment_details_mismatch",
         }),
       }),
     );

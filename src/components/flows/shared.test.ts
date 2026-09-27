@@ -63,6 +63,17 @@ describe('summarizeNode', () => {
       }),
     ).toBe('Proceed to pay INR 49 · Pay Now');
   });
+
+  it('shows the configured INR amount in a Razorpay payment summary', async () => {
+    const { summarizeNode } = await import('./shared');
+    expect(
+      summarizeNode({
+        node_key: 'pay_15_min',
+        node_type: 'razorpay_payment',
+        config: { message_text: 'Proceed to payment', amount: 49 },
+      }),
+    ).toBe('Proceed to payment · INR 49');
+  });
 });
 
 describe('findHttpsLink', () => {

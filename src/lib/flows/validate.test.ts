@@ -236,6 +236,60 @@ describe("validateFlowForActivation — nodes", () => {
     ).toBe(true);
   });
 
+  it("accepts a Razorpay payment with reachable success and failure targets", () => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "pay_15_min" } },
+      {
+        node_key: "pay_15_min",
+        node_type: "razorpay_payment",
+        config: {
+          message_text: "Choose your consultation payment.",
+          button_text: "Pay INR 49",
+          amount: 49,
+          description: "15 minute consultation",
+          success_next: "paid",
+          failure_next: "failed",
+        },
+      },
+      { node_key: "paid", node_type: "end", config: {} },
+      { node_key: "failed", node_type: "end", config: {} },
+    ];
+
+    expect(
+      validateFlowForActivation({ ...validFlow, entry_node_id: "s" }, nodes),
+    ).toEqual([]);
+  });
+
+  it("flags invalid amounts and unresolved Razorpay payment branches", () => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "pay" } },
+      {
+        node_key: "pay",
+        node_type: "razorpay_payment",
+        config: {
+          message_text: "Pay now",
+          button_text: "Pay",
+          amount: 0.5,
+          success_next: "missing_paid",
+          failure_next: "",
+        },
+      },
+      { node_key: "done", node_type: "end", config: {} },
+    ];
+    const issues = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "s" },
+      nodes,
+    );
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ node_key: "pay", field: "amount" }),
+        expect.objectContaining({ node_key: "pay", field: "success_next" }),
+        expect.objectContaining({ node_key: "pay", field: "failure_next" }),
+      ]),
+    );
+  });
+
   it("flags send_buttons without text", () => {
     const nodes = [
       { node_key: "s", node_type: "start", config: { next_node_key: "b" } },

@@ -696,6 +696,7 @@ const ADD_NODE_TYPES: NodeType[] = [
   'send_buttons',
   'send_list',
   'send_message',
+  'razorpay_payment',
   'send_media',
   'send_location',
   'request_location',
